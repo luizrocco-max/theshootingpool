@@ -160,7 +160,52 @@ Isso quer dizer que:
 - Limpar os dados do navegador apaga tudo.
 
 Por isso: **faça backup**. ⚙️ → *Baixar backup (.json)*. Para levar para outro
-aparelho, use ⚙️ → *Restaurar backup* lá.
+aparelho, use ⚙️ → *Restaurar backup* lá. O backup sai **sem senha**, para você
+conseguir recuperar os dados mesmo se esquecer a do clube — guarde-o num lugar
+seu, não no grupo do WhatsApp.
+
+---
+
+## A senha do clube
+
+O site pede uma **senha única**, a mesma para você e para os amigos. Sem ela, a
+tela de entrada não sai do lugar.
+
+### Por que a senha é levada a sério aqui
+
+Num site estático em repositório público, uma tela de senha só em JavaScript
+**não protege nada**: quem abre o código-fonte a encontra, e quem pede
+`data/apostas.json` direto no navegador baixa tudo sem passar pela tela.
+
+Por isso o que é publicado vai **cifrado com a senha do clube**: a senha vira
+uma chave (PBKDF2-SHA256, 310 mil rodadas, sal sorteado) e os dados são fechados
+com AES-GCM, usando o WebCrypto do próprio navegador. Quem baixar o arquivo sem
+a senha encontra só um bloco ilegível — nem nome, nem valor, nem quem está
+devendo. O AES-GCM ainda detecta se alguém alterou o arquivo.
+
+### O que a senha protege — e o que não protege
+
+| Protege                                                  | Não protege                                                     |
+| -------------------------------------------------------- | --------------------------------------------------------------- |
+| Os dados publicados, para quem não tem a senha            | O código do site, que é público (e não tem nada de secreto)      |
+| O arquivo contra alteração por terceiros (AES-GCM)        | A cópia local no seu aparelho, gravada em texto — proteja o aparelho |
+| A entrada no painel, em qualquer aparelho                 | Um backup `.json` que você mesmo compartilhe                     |
+
+Como o arquivo cifrado é público, alguém pode tentar **adivinhar a senha
+offline**. É por isso que o app exige no mínimo 8 caracteres e avisa quando a
+senha é fraca. Use uma **frase**: `pratoquebrado no domingo` é fácil de lembrar,
+fácil de passar no grupo e inviável de adivinhar. Evite `clube123` e parentes.
+
+### Detalhes práticos
+
+- **Não há recuperação de senha.** Perdeu, perdeu — restaure de um backup.
+- **Trocar a senha:** ⚙️ → *Senha do clube*. Vale para todos só depois de
+  **publicar de novo** (o arquivo antigo continua fechado com a senha antiga).
+- **Lembrar neste aparelho** guarda a senha naquele navegador para não digitar
+  toda vez. Deixe desmarcado em aparelho compartilhado.
+- A **senha do clube** (todo mundo, para ver) é diferente da **senha do
+  organizador** (só você, que autoriza publicar no Worker). Podem ser iguais,
+  mas não devem: quem publica pode sobrescrever tudo.
 
 ---
 
@@ -173,11 +218,11 @@ Serve para todo mundo ver os números pelo link, sem instalar nada.
 **Settings → Pages → Source: Deploy from a branch → `main` / `(root)` → Save.**
 Em ~1 minuto sai a URL, tipo `https://luizrocco-max.github.io/theshootingpool/`.
 
-> ⚠️ Em conta gratuita, o Pages só funciona em repositório **público** — ou seja,
-> qualquer pessoa com o link vê os nomes e os valores publicados. Se isso não for
-> desejável, mantenha o repositório privado e **não publique**: use o painel só no
-> aparelho do organizador, compartilhando o acerto por print, PDF ou WhatsApp
-> (botões *Imprimir* e *Copiar resumo*).
+> Em conta gratuita o Pages só funciona em repositório **público** — o endereço
+> do site e o código ficam abertos. Tudo bem: o que é publicado vai cifrado com a
+> senha do clube (veja acima), então quem chegar sem a senha não vê nome nem
+> valor nenhum. O HTTPS do Pages também é necessário para a parte de segurança
+> funcionar: o navegador só libera o WebCrypto em `https` (ou em `localhost`).
 
 ### 2. Ligar o publicador (para atualizar pelo próprio site)
 
@@ -199,9 +244,10 @@ guardado no Worker — nunca no site nem no celular.
 Sem Worker também dá: ⚙️ → *Baixar backup* e suba o arquivo como
 `data/apostas.json` no repositório.
 
-Quem abrir o site pela primeira vez carrega o que está publicado. Quem já tem
-dados no aparelho continua com os seus — para trocar, use ⚙️ → *Trazer o que está
-publicado* (isso substitui a cópia local, então baixe um backup antes).
+Quem abrir o site pela primeira vez digita a senha do clube e carrega o que está
+publicado. Quem já tem dados no aparelho continua com os seus — para trocar, use
+⚙️ → *Trazer o que está publicado* (isso substitui a cópia local, então baixe um
+backup antes).
 
 ---
 
@@ -225,8 +271,9 @@ a leitura de `data/apostas.json`.
 ## Estrutura
 
 ```
-index.html                     # a interface (HTML + CSS)
+index.html                     # a interface (HTML + CSS) e a tela de entrada
 assets/calc.js                 # motor de cálculo: faixas, rateio, acerto, temporada
+assets/cofre.js                # senha do clube: cifra o que é publicado (WebCrypto)
 assets/planilha.js             # leitura e escrita das abas da planilha
 assets/pdf.js                  # gerador de PDF (sem biblioteca externa)
 assets/app.js                  # as telas, a gravação local e a publicação
@@ -234,6 +281,7 @@ assets/vendor/xlsx.full.min.js # SheetJS, para ler e gravar .xlsx (carregado sob
 data/apostas.json              # dados publicados para o clube (opcional)
 modelo-planilha-apostas.xlsx   # modelo entregue ao clube
 test/calc.test.js              # testes do cálculo
+test/cofre.test.js             # testes da senha e da cifragem
 test/planilha.test.js          # testes da planilha, incluindo um .xlsx de verdade
 test/pdf.test.js               # testes do PDF (estrutura, xref, acentuação)
 scripts/serve.js               # servidor local sem dependências (npm start)

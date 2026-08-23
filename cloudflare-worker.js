@@ -74,8 +74,12 @@ export default {
     const { password, dados } = body || {};
     if (!senhaConfere(password, env.ADMIN_PASSWORD))
       return json({ ok: false, error: "Senha incorreta" }, 401, cors);
-    if (!dados || !Array.isArray(dados.competicoes))
-      return json({ ok: false, error: "Dados inválidos" }, 400, cors);
+
+    // o painel manda o conteúdo cifrado com a senha do clube (cofre), mas
+    // arquivos antigos, em texto puro, continuam aceitos
+    const cifrado = dados && dados.cofre && dados.dados && dados.sal && dados.iv;
+    const puro = dados && Array.isArray(dados.competicoes);
+    if (!cifrado && !puro) return json({ ok: false, error: "Dados inválidos" }, 400, cors);
 
     const repo = env.GITHUB_REPO;
     const url = `https://api.github.com/repos/${repo}/contents/${DATA_PATH}`;

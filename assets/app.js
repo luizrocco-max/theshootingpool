@@ -10,7 +10,11 @@
   const C = window.Calc;
   const CHAVE_LOCAL = "tsp_dados_v1";
   const CHAVE_PUB = "tsp_publicador";
+  const CHAVE_TRAVA = "tsp_trava"; // verificador da senha do clube
+  const CHAVE_LEMBRADA = "tsp_senha"; // só se a pessoa pedir "lembrar"
   const CAMINHO_DADOS = "data/apostas.json";
+
+  let SENHA = null; // a senha do clube, só na memória enquanto a aba está aberta
 
   /* ──────────────────────────── utilidades ──────────────────────────── */
 
@@ -1015,17 +1019,26 @@
       else localStorage.removeItem(CHAVE_PUB);
     } catch (e) { /* ignora */ }
 
-    msg("msgAdmin", "Publicando…", "info");
+    if (!SENHA) { msg("msgAdmin", "Entre com a senha do clube antes de publicar.", "err"); return; }
+
+    msg("msgAdmin", "Fechando o cofre e publicando…", "info");
     try {
+      // o que sai daqui já vai cifrado com a senha do clube: o Worker e o
+      // repositório só veem um bloco ilegível
+      const pacote = await Cofre.cifrar(DADOS, SENHA, { atualizado_em: DADOS.atualizado_em || agora() });
       const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: senha, dados: DADOS }),
+        body: JSON.stringify({ password: senha, dados: pacote }),
       });
       let out = {};
       try { out = await r.json(); } catch (e) { /* resposta sem json */ }
       if (!r.ok || !out.ok) throw new Error(out.error || `HTTP ${r.status}`);
-      msg("msgAdmin", "✅ Publicado! Em 1 a 2 minutos o site mostra os números novos para todos.", "ok");
+      msg(
+        "msgAdmin",
+        "✅ Publicado, cifrado com a senha do clube. Em 1 a 2 minutos quem tiver a senha vê os números novos.",
+        "ok"
+      );
     } catch (err) {
       msg("msgAdmin", "Falha ao publicar: " + esc(err.message), "err");
     }
@@ -1036,7 +1049,16 @@
     try {
       const r = await fetch(CAMINHO_DADOS + "?t=" + Date.now(), { cache: "no-store" });
       if (!r.ok) throw new Error("nada publicado ainda (HTTP " + r.status + ")");
-      const d = normalizar(await r.json());
+      const bruto = await r.json();
+      let conteudo = bruto;
+      if (Cofre.estaCifrado(bruto)) {
+        try {
+          conteudo = await Cofre.decifrar(bruto, SENHA);
+        } catch (e) {
+          throw new Error("o arquivo do clube foi publicado com outra senha");
+        }
+      }
+      const d = normalizar(conteudo);
       if (!d.competicoes.length) throw new Error("o arquivo publicado está vazio");
       if (
         !confirm(
@@ -1303,25 +1325,192 @@
     salvar();
   }
 
+  /* ══════════════════════════ TELA DE ENTRADA ═══════════════════════ */
+
+  const guardado = (chave) => {
+    try { return JSON.parse(localStorage.getItem(chave) || "null"); } catch (e) { return null; }
+  };
+  const guardar = (chave, valor) => {
+    try {
+      if (valor === null) localStorage.removeItem(chave);
+      else localStorage.setItem(chave, JSON.stringify(valor));
+    } catch (e) { /* aparelho sem espaço ou em aba anônima */ }
+  };
+
+  /** Busca o arquivo publicado. Devolve null se não houver. */
+  async function buscarPublicado() {
+    try {
+      const r = await fetch(CAMINHO_DADOS + "?t=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (Cofre.estaCifrado(j)) return j;
+      return j && j.competicoes && j.competicoes.length ? j : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function mostrarForca(senha, ondeId) {
+    const el = $(ondeId);
+    if (!el) return;
+    if (!senha) { el.className = "forca"; el.textContent = ""; return; }
+    const f = Cofre.forca(senha);
+    const rotulos = { curta: "curta demais", fraca: "fraca", razoavel: "razoável", boa: "boa" };
+    el.className = "forca " + f.nivel;
+    el.innerHTML = `<b>Senha ${rotulos[f.nivel]}</b>${f.aviso ? " — " + esc(f.aviso) : ""}`;
+  }
+
+  function abrirApp() {
+    if (!comps().length) novaCompeticao();
+    compId = comps()[comps().length - 1].id;
+    $("trava").hidden = true;
+    document.querySelector(".wrap").hidden = false;
+    $("btnAdmin").hidden = false;
+    render();
+  }
+
+  /** Decide se a tela pede para criar a senha ou para entrar. */
+  async function prepararTrava() {
+    if (!window.crypto || !window.crypto.subtle) {
+      $("travaTexto").innerHTML =
+        "Este navegador só libera a parte de segurança em endereços <b>https</b>. " +
+        "Abra o site pelo endereço https (ou por localhost).";
+      $("formTrava").hidden = true;
+      return;
+    }
+
+    const verificador = guardado(CHAVE_TRAVA);
+    const publicado = await buscarPublicado();
+    const primeiraVez = !verificador && !(publicado && Cofre.estaCifrado(publicado));
+
+    $("travaConfirma").hidden = !primeiraVez;
+    $("travaEntrar").textContent = primeiraVez ? "Criar senha e entrar" : "Entrar";
+    $("travaTexto").textContent = primeiraVez
+      ? "Primeira vez aqui: crie a senha que você e seus amigos vão usar para entrar."
+      : "Área do clube — entre com a senha.";
+    $("travaRodape").innerHTML = primeiraVez
+      ? "Essa senha também fecha o arquivo publicado: sem ela, quem abrir o endereço do site não vê nada. " +
+        "Guarde-a — não há como recuperá-la."
+      : publicado && publicado.atualizado_em
+      ? "Última publicação do clube: " + esc(publicado.atualizado_em)
+      : "";
+
+    const lembrada = guardado(CHAVE_LEMBRADA);
+    if (lembrada && !primeiraVez) {
+      $("travaSenha").value = lembrada;
+      $("travaLembrar").checked = true;
+      const ok = await tentarEntrar(lembrada, publicado, verificador);
+      if (ok) return;
+      guardar(CHAVE_LEMBRADA, null); // a senha mudou desde a última vez
+      $("travaSenha").value = "";
+    }
+    setTimeout(() => $("travaSenha").focus(), 60);
+  }
+
+  /**
+   * Confere a senha contra o verificador local e/ou o arquivo publicado.
+   * @returns {Promise<boolean>} true se entrou
+   */
+  async function tentarEntrar(senha, publicado, verificador) {
+    // 1) o aparelho já conhece a senha
+    if (verificador && (await Cofre.confere(senha, verificador))) {
+      SENHA = senha;
+      if (!comps().length && publicado) await adotarPublicado(publicado, senha, true);
+      abrirApp();
+      return true;
+    }
+    // 2) senão, vale se abrir o arquivo que o clube publicou
+    if (publicado && Cofre.estaCifrado(publicado)) {
+      try {
+        const dados = await Cofre.decifrar(publicado, senha);
+        SENHA = senha;
+        guardar(CHAVE_TRAVA, await Cofre.criarVerificador(senha));
+        if (!comps().length) {
+          DADOS = normalizar(dados);
+          salvar(false);
+        }
+        abrirApp();
+        return true;
+      } catch (e) { /* senha errada */ }
+    }
+    return false;
+  }
+
+  async function adotarPublicado(publicado, senha, silencioso) {
+    try {
+      const bruto = Cofre.estaCifrado(publicado) ? await Cofre.decifrar(publicado, senha) : publicado;
+      const d = normalizar(bruto);
+      if (d.competicoes.length) { DADOS = d; salvar(false); }
+      return true;
+    } catch (e) {
+      if (!silencioso) throw e;
+      return false;
+    }
+  }
+
+  function ligarTrava() {
+    $("travaSenha").addEventListener("input", (e) => {
+      if (!$("travaConfirma").hidden) mostrarForca(e.target.value, "travaForca");
+    });
+    $("novaSenha").addEventListener("input", (e) => mostrarForca(e.target.value, "novaForca"));
+
+    $("formTrava").onsubmit = async (e) => {
+      e.preventDefault();
+      const senha = $("travaSenha").value;
+      const criando = !$("travaConfirma").hidden;
+      $("travaEntrar").disabled = true;
+      try {
+        if (criando) {
+          const f = Cofre.forca(senha);
+          if (!f.ok) { msg("travaMsg", esc(f.aviso), "err"); return; }
+          if (senha !== $("travaSenha2").value) { msg("travaMsg", "As duas senhas não são iguais.", "err"); return; }
+          SENHA = senha;
+          guardar(CHAVE_TRAVA, await Cofre.criarVerificador(senha));
+          if ($("travaLembrar").checked) guardar(CHAVE_LEMBRADA, senha);
+          abrirApp();
+          return;
+        }
+        msg("travaMsg", "Conferindo…", "info");
+        const ok = await tentarEntrar(senha, await buscarPublicado(), guardado(CHAVE_TRAVA));
+        if (ok) {
+          guardar(CHAVE_LEMBRADA, $("travaLembrar").checked ? senha : null);
+          msg("travaMsg", "", "");
+        } else {
+          msg("travaMsg", "Senha incorreta.", "err");
+          $("travaSenha").select();
+        }
+      } finally {
+        $("travaEntrar").disabled = false;
+      }
+    };
+
+    $("btnTrocarSenha").onclick = async () => {
+      const nova = $("novaSenha").value;
+      const f = Cofre.forca(nova);
+      if (!f.ok) { msg("msgAdmin", esc(f.aviso), "err"); return; }
+      if (nova !== $("novaSenha2").value) { msg("msgAdmin", "As duas senhas não são iguais.", "err"); return; }
+      SENHA = nova;
+      guardar(CHAVE_TRAVA, await Cofre.criarVerificador(nova));
+      if (guardado(CHAVE_LEMBRADA)) guardar(CHAVE_LEMBRADA, nova);
+      $("novaSenha").value = "";
+      $("novaSenha2").value = "";
+      mostrarForca("", "novaForca");
+      msg(
+        "msgAdmin",
+        "✅ Senha trocada neste aparelho.<br><b>Publique de novo</b> para que o arquivo do clube passe " +
+          "a usar a senha nova — e avise o pessoal.",
+        "ok"
+      );
+    };
+  }
+
   /* ═══════════════════════════════ BOOT ═════════════════════════════ */
 
   async function boot() {
     ligarEventos();
-    const tinhaLocal = carregar();
-
-    if (!tinhaLocal) {
-      // primeira visita: tenta o que o clube publicou
-      try {
-        const r = await fetch(CAMINHO_DADOS + "?t=" + Date.now(), { cache: "no-store" });
-        if (r.ok) {
-          const d = normalizar(await r.json());
-          if (d.competicoes.length) DADOS = d;
-        }
-      } catch (e) { /* sem arquivo publicado: segue local */ }
-    }
-    if (!comps().length) novaCompeticao();
-    compId = comps()[comps().length - 1].id;
-    render();
+    ligarTrava();
+    carregar(); // a competição em branco só nasce depois de entrar (abrirApp)
+    await prepararTrava();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
