@@ -79,6 +79,24 @@ são configuráveis **por competição** — e podem virar o padrão das próxim
 
 ---
 
+## PDF dos ganhadores
+
+O botão **📄 Baixar PDF** — nas abas 🏆 Resultado e 🤝 Acerto de contas — gera o
+relatório da competição em A4:
+
+- cabeçalho com o nome da competição e a data;
+- resumo: bolo, nº de apostas, apostadores, total em prêmios e taxa do clube;
+- a divisão em vigor (`1º 50% · 2º 30% · 3º 20%`, ou o que estiver configurado);
+- **Ganhadores**: cada colocação com o atirador, a faixa e quanto cada apostador leva;
+- **Acerto de contas**: apostou, deve, prêmio, saldo e situação de cada um, com
+  quem o clube precisa cobrar em destaque;
+- **Apostas lançadas** para conferência, marcando as que estão em aberto.
+
+O arquivo é gerado no próprio navegador, sem enviar nada para lugar nenhum, e
+quebra em várias páginas repetindo o cabeçalho das tabelas quando a lista é longa.
+
+---
+
 ## Lançar por planilha
 
 Dá para trabalhar pelo painel, pela planilha, ou pelos dois — a seção
@@ -210,12 +228,14 @@ a leitura de `data/apostas.json`.
 index.html                     # a interface (HTML + CSS)
 assets/calc.js                 # motor de cálculo: faixas, rateio, acerto, temporada
 assets/planilha.js             # leitura e escrita das abas da planilha
+assets/pdf.js                  # gerador de PDF (sem biblioteca externa)
 assets/app.js                  # as telas, a gravação local e a publicação
 assets/vendor/xlsx.full.min.js # SheetJS, para ler e gravar .xlsx (carregado sob demanda)
 data/apostas.json              # dados publicados para o clube (opcional)
 modelo-planilha-apostas.xlsx   # modelo entregue ao clube
 test/calc.test.js              # testes do cálculo
 test/planilha.test.js          # testes da planilha, incluindo um .xlsx de verdade
+test/pdf.test.js               # testes do PDF (estrutura, xref, acentuação)
 scripts/serve.js               # servidor local sem dependências (npm start)
 scripts/gerar-modelo.js        # regera o modelo (npm run modelo)
 cloudflare-worker.js           # publicador com senha (opcional)
@@ -227,6 +247,8 @@ método do maior resto — a soma dos prêmios sempre fecha exatamente com o bol
 centavo sumindo no arredondamento, com qualquer combinação de percentuais. A aba
 *Acerto de contas* mostra essa conferência.
 
-O único código de terceiros é o [SheetJS](https://sheetjs.com) (`xlsx` 0.18.5,
-licença Apache-2.0), embutido em `assets/vendor/` para o site funcionar sem
-depender de CDN. Ele só é carregado quando alguém usa a planilha.
+O PDF é escrito à mão (`assets/pdf.js`, PDF 1.4 com as fontes que todo leitor já
+tem), sem biblioteca. O único código de terceiros no projeto é o
+[SheetJS](https://sheetjs.com) (`xlsx` 0.18.5, licença Apache-2.0), embutido em
+`assets/vendor/` para o site funcionar sem depender de CDN — e carregado só
+quando alguém usa a planilha.

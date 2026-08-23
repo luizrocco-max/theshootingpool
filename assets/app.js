@@ -367,9 +367,13 @@
 
     $("premiacao").innerHTML = `
       <div class="card">
-        <h3>Divisão do bolo — ${esc(fmt(conta.pote))}${
+        <div class="toolbar">
+          <h3 style="margin:0">Divisão do bolo — ${esc(fmt(conta.pote))}${
       conta.taxaC ? ` <span style="color:var(--muted);font-weight:400">(taxa do clube: ${esc(fmt(conta.taxaC))})</span>` : ""
     }</h3>
+          <span class="sp"></span>
+          <button class="btn mini naoimprime" data-act="pdf">📄 Baixar PDF</button>
+        </div>
         <div class="podium">${conta.faixas
           .map((f, i) => {
             const corpo = !f.atirador
@@ -821,6 +825,34 @@
     baixarArquivo(`apostas-${(c.nome || "competicao").replace(/\W+/g, "-").toLowerCase()}.csv`, "﻿" + csv, "text/csv;charset=utf-8");
   }
 
+  /* ═══════════════════════════════ PDF ══════════════════════════════ */
+
+  /** Nome de arquivo sem acento nem sinal esquisito. */
+  function slug(txt) {
+    return (
+      C.chave(txt)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "competicao"
+    );
+  }
+
+  /** Relatório da competição em PDF: ganhadores, valores e acerto de contas. */
+  function gerarPDF() {
+    const c = compAtual();
+    if (!c) return;
+    try {
+      const bytes = Pdf.relatorio(c, { geradoEm: agora() });
+      baixarArquivo(
+        `apostas-${slug(c.nome)}${c.data ? "-" + c.data : ""}.pdf`,
+        bytes,
+        "application/pdf"
+      );
+    } catch (err) {
+      alert("Não consegui gerar o PDF: " + err.message);
+    }
+  }
+
   /* ═════════════════════════════ PLANILHA ═══════════════════════════ */
 
   /** Carrega o leitor de Excel só quando alguém realmente vai usar. */
@@ -1088,6 +1120,7 @@
     };
 
     // acerto
+    $("btnPDF").onclick = gerarPDF;
     $("btnImprimir").onclick = () => window.print();
     $("btnCopiar").onclick = async () => {
       const txt = resumoTexto();
@@ -1184,6 +1217,8 @@
           c.apostas = c.apostas.filter((x) => x.id !== a.id);
           salvar();
         }
+      } else if (act === "pdf") {
+        gerarPDF();
       } else if (act === "acertar") {
         acertar(btn.dataset.chave);
       } else if (act === "desacertar") {
