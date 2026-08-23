@@ -5,7 +5,8 @@
   "description": "Dashboard de apostas do clube de tiro — divisão 50/30/20 do bolo entre os apostadores",
   "scripts": {
     "start": "node scripts/serve.js",
-    "test": "node --test"
+    "test": "node --test",
+    "modelo": "node scripts/gerar-modelo.js"
   },
   "engines": {
     "node": ">=18"

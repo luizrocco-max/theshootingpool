@@ -84,8 +84,14 @@
   .kpi.a .v{color:var(--accent2)} .kpi.g .v{color:var(--good)} .kpi.b .v{color:var(--bad)}
 
   /* ---------- pódio ---------- */
-  .podium{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:6px 0 4px}
+  .podium{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:6px 0 4px}
   @media(max-width:700px){.podium{grid-template-columns:1fr}}
+  #podioInputs{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+  .colocacao{display:flex;gap:8px;align-items:center}
+  .colocacao .pctbox{width:82px;flex:none;text-align:right}
+  .somapct{font-size:12px;color:var(--muted);margin-top:10px}
+  .somapct b{color:var(--txt)}
+  .somapct.alerta100{color:var(--accent2)}
   .pod{border-radius:16px;padding:16px 14px;border:1px solid var(--line);
     box-shadow:0 8px 22px rgba(0,0,0,.35)}
   .pod.g1{background:linear-gradient(160deg,#5a4a12,#2a2410);border-color:#7a6417}
@@ -176,7 +182,7 @@
     <div class="mark">🎯</div>
     <div class="htext">
       <h1>The Shooting <span>Pool</span></h1>
-      <p>Apostas do clube · 50% para o 1º · 30% para o 2º · 20% para o 3º</p>
+      <p id="subtitulo">Apostas do clube de tiro</p>
     </div>
     <div class="hdocs">
       <button class="docbtn" data-view="ajuda">❓ Como funciona</button>
@@ -229,6 +235,20 @@
       <div class="msg" id="msgAposta"></div>
     </div>
 
+    <div class="card naoimprime">
+      <div class="toolbar">
+        <h3 style="margin:0">Planilha</h3>
+        <span class="sp"></span>
+        <button class="btn ghost mini" id="btnModelo">⬇️ Baixar modelo</button>
+        <button class="btn ghost mini" id="btnImportar">⬆️ Importar planilha</button>
+        <button class="btn ghost mini" id="btnExportar">⬇️ Exportar tudo (Excel)</button>
+        <input type="file" id="fileImportar" accept=".xlsx,.xlsm,.xls,.csv" hidden>
+      </div>
+      <div class="hint">Dá para lançar as apostas aqui no painel ou pela planilha — o modelo já vem
+        com as colunas certas. Reimportar a mesma competição (mesmo nome e data) atualiza os dados dela.</div>
+      <div class="msg" id="msgPlanilha"></div>
+    </div>
+
     <div class="card">
       <div class="toolbar">
         <h3 style="margin:0">Apostas da competição</h3>
@@ -243,27 +263,20 @@
 
   <section id="view-resultado" hidden>
     <div class="card naoimprime">
-      <h3>Pódio da competição</h3>
-      <div class="formgrid" style="grid-template-columns:1fr 1fr 1fr">
-        <div>
-          <label class="lb">🥇 1º lugar — <span id="pct1">50</span>%</label>
-          <input id="fPodio0" list="dlAtiradores" placeholder="Nome do atirador">
-        </div>
-        <div>
-          <label class="lb">🥈 2º lugar — <span id="pct2">30</span>%</label>
-          <input id="fPodio1" list="dlAtiradores" placeholder="Nome do atirador">
-        </div>
-        <div>
-          <label class="lb">🥉 3º lugar — <span id="pct3">20</span>%</label>
-          <input id="fPodio2" list="dlAtiradores" placeholder="Nome do atirador">
-        </div>
+      <div class="toolbar">
+        <h3 style="margin:0">Pódio da competição</h3>
+        <span class="sp"></span>
+        <button class="btn ghost mini" id="btnMenosColocacao">− colocação</button>
+        <button class="btn ghost mini" id="btnMaisColocacao">+ colocação</button>
       </div>
-      <div class="row" style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+      <div class="formgrid" id="podioInputs"></div>
+      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
         <button class="btn" id="btnSalvarPodio">Salvar resultado</button>
         <button class="btn ghost" id="btnLimparPodio">Limpar</button>
       </div>
-      <div class="hint">Só entram no rateio atiradores que receberam aposta. Se ninguém apostou num
-        colocado, a fatia dele segue a regra escolhida em ⚙️ → Ajustes.</div>
+      <div class="hint">Os percentuais de cada colocação são editáveis aqui mesmo — e quantas
+        colocações o clube quiser premiar. Só entram no rateio atiradores que receberam aposta; se
+        ninguém apostou num colocado, a fatia dele segue a regra escolhida em ❓ Como funciona → Ajustes.</div>
     </div>
     <div id="alertasResultado"></div>
     <div id="premiacao"></div>
@@ -300,14 +313,18 @@
     <div class="card ajuda">
       <h3>Como o dinheiro é dividido</h3>
       <p>O <b>bolo</b> é a soma de todas as apostas da competição — inclusive as que ainda não
-        foram pagas. Depois do resultado, o bolo é dividido em três faixas:</p>
+        foram pagas. Depois do resultado, o bolo é dividido por colocação. O padrão do clube é:</p>
       <ul>
         <li><b>50%</b> entre quem apostou no <b>1º colocado</b>;</li>
         <li><b>30%</b> entre quem apostou no <b>2º colocado</b>;</li>
         <li><b>20%</b> entre quem apostou no <b>3º colocado</b>.</li>
       </ul>
+      <p><b>Isso é só o padrão.</b> Na aba 🏆 Resultado você muda o percentual de cada colocação e
+        usa <b>+ colocação</b> / <b>− colocação</b> para premiar quantos lugares quiser — de só o
+        campeão a seis colocados. Os percentuais não precisam somar 100%: o bolo é sempre dividido
+        na proporção que você escrever. Logo abaixo há modelos prontos (60/40, 40/30/20/10…).</p>
       <p>Dentro de cada faixa, o valor é rateado <b>proporcionalmente ao que cada um apostou</b>
-        (quem pôs mais, leva mais). Dá para trocar para partes iguais em ⚙️ → Ajustes.</p>
+        (quem pôs mais, leva mais). Dá para trocar para partes iguais nos Ajustes, no fim desta página.</p>
 
       <h4>Exemplo</h4>
       <div class="exemplo">
@@ -337,6 +354,20 @@
         <li>Terminada a prova, informe o pódio na aba <b>Resultado</b>.</li>
         <li>Use a aba <b>Acerto de contas</b> para pagar e cobrar — e marque cada um como acertado.</li>
       </ol>
+
+      <h4>Lançar por planilha</h4>
+      <p>Na aba 💵 Apostas há uma seção <b>Planilha</b> com três botões:</p>
+      <ul>
+        <li><b>Baixar modelo</b> — um Excel com as colunas certas e um exemplo preenchido.</li>
+        <li><b>Importar planilha</b> — lê a planilha e cria (ou atualiza) as competições. Reimportar
+          a mesma competição — mesmo nome e mesma data — substitui as apostas dela.</li>
+        <li><b>Exportar tudo</b> — gera um Excel com as apostas, o resultado, os ajustes, o acerto
+          de contas e a temporada. As três primeiras abas podem ser editadas e importadas de volta.</li>
+      </ul>
+      <p>Na planilha, a aba <b>Resultado</b> também define os percentuais: uma linha por colocação,
+        com a coluna <code>PERCENTUAL</code>. É por ali que se premia 4º, 5º lugar e assim por diante.
+        Os nomes das colunas podem estar em qualquer ordem, e o sistema entende
+        <code>sim/não</code>, <code>x</code>, <code>ok</code> na coluna de pagamento.</p>
 
       <h4>Onde ficam os dados</h4>
       <p>Tudo é gravado <b>neste aparelho</b> (no próprio navegador). Nada sai daqui sozinho.
@@ -407,4 +438,5 @@
 </div>
 
 <script src="assets/calc.js"></script>
+<script src="assets/planilha.js"></script>
 <script src="assets/app.js"></script>

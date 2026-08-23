@@ -24,8 +24,11 @@
 
   /* ─────────────────────────────── regra ─────────────────────────────── */
 
+  const MAX_COLOCACOES = 20;
+
   const REGRA_PADRAO = {
-    premios: [50, 30, 20], // % para 1º, 2º e 3º colocado
+    // uma porcentagem por colocação premiada — quantas o clube quiser
+    premios: [50, 30, 20],
     rateio: "proporcional", // "proporcional" (por valor apostado) | "igual"
     sobra: "redistribuir", // faixa sem apostador: "redistribuir" | "clube"
     taxaClube: 0, // % do bolo retido pelo clube antes da divisão
@@ -33,9 +36,10 @@
 
   function regraDe(comp) {
     const r = Object.assign({}, REGRA_PADRAO, (comp && comp.regra) || {});
-    const p = Array.isArray(r.premios) ? r.premios.slice(0, 3) : [];
-    while (p.length < 3) p.push(0);
-    r.premios = p.map((x) => Math.max(0, Number(x) || 0));
+    const p = (Array.isArray(r.premios) ? r.premios : [])
+      .slice(0, MAX_COLOCACOES)
+      .map((x) => Math.max(0, Number(x) || 0));
+    r.premios = p.length ? p : REGRA_PADRAO.premios.slice();
     r.rateio = r.rateio === "igual" ? "igual" : "proporcional";
     r.sobra = r.sobra === "clube" ? "clube" : "redistribuir";
     r.taxaClube = Math.min(100, Math.max(0, Number(r.taxaClube) || 0));
@@ -179,7 +183,8 @@
     const poteLiquidoC = pote - taxaC;
 
     // ── pódio: uma faixa por colocação ──────────────────────────────────
-    const podio = [0, 1, 2].map((i) => norm(((comp && comp.resultado) || [])[i] || ""));
+    const resultado = (comp && comp.resultado) || [];
+    const podio = regra.premios.map((_, i) => norm(resultado[i] || ""));
     // um atirador não pode ocupar duas colocações: vale a melhor delas
     const jaNoPodio = new Set();
     const faixas = podio.map((atirador, i) => {
@@ -201,8 +206,8 @@
     });
 
     const definido = podio.some(Boolean);
-    for (let i = 0; i < 3; i++) {
-      for (let j = i + 1; j < 3; j++) {
+    for (let i = 0; i < podio.length; i++) {
+      for (let j = i + 1; j < podio.length; j++) {
         if (podio[i] && chave(podio[i]) === chave(podio[j]))
           alertas.push(
             `${podio[i]} está no ${i + 1}º e no ${j + 1}º lugar ao mesmo tempo — corrija o pódio.`
@@ -410,7 +415,7 @@
             chave: k,
             apostadoC: 0,
             nApostas: 0,
-            podios: [0, 0, 0],
+            podios: [],
             competicoes: new Set(),
           });
         const t = atiradores.get(k);
@@ -428,21 +433,29 @@
             chave: k,
             apostadoC: 0,
             nApostas: 0,
-            podios: [0, 0, 0],
+            podios: [],
             competicoes: new Set(),
           });
-        atiradores.get(k).podios[f.posicao - 1] += 1;
+        const alvo = atiradores.get(k).podios;
+        while (alvo.length < f.posicao) alvo.push(0);
+        alvo[f.posicao - 1] += 1;
       });
     });
 
     const listaApostadores = [...apostadores.values()].sort(
       (a, b) => b.lucroC - a.lucroC || b.premioC - a.premioC || a.nome.localeCompare(b.nome, "pt-BR")
     );
+    // quantas colocações a temporada chegou a premiar (as competições podem diferir)
+    const maxColocacoes = [...atiradores.values()].reduce((m, t) => Math.max(m, t.podios.length), 0);
     const listaAtiradores = [...atiradores.values()]
-      .map((t) => Object.assign({}, t, { competicoes: t.competicoes.size }))
+      .map((t) => {
+        const podios = t.podios.slice();
+        while (podios.length < maxColocacoes) podios.push(0);
+        return Object.assign({}, t, { competicoes: t.competicoes.size, podios });
+      })
       .sort(
         (a, b) =>
-          b.podios[0] - a.podios[0] ||
+          (b.podios[0] || 0) - (a.podios[0] || 0) ||
           b.apostadoC - a.apostadoC ||
           a.nome.localeCompare(b.nome, "pt-BR")
       );
@@ -456,11 +469,24 @@
       aReceberC: comps.reduce((s, c) => s + c.conta.totais.aReceberC, 0),
     };
 
-    return { comps, apostadores: listaApostadores, atiradores: listaAtiradores, totais };
+    return {
+      comps,
+      apostadores: listaApostadores,
+      atiradores: listaAtiradores,
+      maxColocacoes,
+      totais,
+    };
+  }
+
+  /** "1º", "2º", … — rótulo de uma colocação (i começa em 0). */
+  function rotuloPosicao(i) {
+    return i + 1 + "º";
   }
 
   return {
+    MAX_COLOCACOES,
     REGRA_PADRAO,
+    rotuloPosicao,
     regraDe,
     cent,
     reais,

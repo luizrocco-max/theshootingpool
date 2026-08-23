@@ -12,7 +12,8 @@ organiza. Publicar para o clube inteiro ver é opcional.
 ## A regra do bolo
 
 O **bolo** é a soma de **todas** as apostas da competição — inclusive as que
-ainda não foram pagas. Depois do resultado ele é dividido em três faixas:
+ainda não foram pagas. Depois do resultado ele é dividido por colocação. O padrão
+do clube é:
 
 | Faixa | Vai para quem apostou no… |
 | ----: | ------------------------- |
@@ -21,7 +22,20 @@ ainda não foram pagas. Depois do resultado ele é dividido em três faixas:
 |  20%  | 🥉 3º colocado            |
 
 Dentro de cada faixa o dinheiro é rateado **proporcionalmente ao valor apostado**
-(quem pôs mais, leva mais). Dá para trocar para partes iguais em ⚙️ → Ajustes.
+(quem pôs mais, leva mais). Dá para trocar para partes iguais nos Ajustes.
+
+### Os percentuais são livres
+
+Isso acima é só o padrão. Na aba **🏆 Resultado** cada colocação tem o seu campo
+de percentual, editável na hora, e os botões **+ colocação** / **− colocação**
+mudam quantos lugares o clube premia — de só o campeão até 20 colocados.
+
+- Os percentuais **não precisam somar 100%**: o bolo é dividido na proporção que
+  estiver escrita (`2 / 1 / 1` paga igual a `50 / 25 / 25`).
+- Em **❓ Como funciona → Ajustes** há atalhos prontos: `50/30/20`, `60/40`,
+  `100`, `40/30/20/10`, `40/25/15/12/8`, `35/25/18/12/6/4`.
+- Cada competição guarda a sua própria divisão — mudar uma não mexe nas antigas.
+  O botão **Usar também nas próximas** adota a configuração atual como padrão.
 
 > **Exemplo.** Bolo de R$ 1.000. No 1º colocado apostaram Ana (R$ 100) e Bruno
 > (R$ 300) — R$ 400 no total. A faixa do 1º lugar vale R$ 500: Ana entrou com 1/4
@@ -62,6 +76,58 @@ são configuráveis **por competição** — e podem virar o padrão das próxim
    **imprimir**. Marque cada um como *acertado* conforme for pagando/recebendo.
 5. Aba **📊 Temporada** — o consolidado: lucro de cada apostador, pódios de cada
    atirador e as competições com pendência em aberto.
+
+---
+
+## Lançar por planilha
+
+Dá para trabalhar pelo painel, pela planilha, ou pelos dois — a seção
+**Planilha**, na aba 💵 Apostas, tem três botões:
+
+| Botão                        | O que faz                                                                   |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| **⬇️ Baixar modelo**         | Excel com as colunas certas, instruções e um exemplo preenchido              |
+| **⬆️ Importar planilha**     | Lê a planilha e cria (ou atualiza) as competições                            |
+| **⬇️ Exportar tudo (Excel)** | Gera as apostas, o resultado, os ajustes, o acerto de contas e a temporada    |
+
+O modelo também está versionado aqui: [`modelo-planilha-apostas.xlsx`](modelo-planilha-apostas.xlsx).
+
+### Como a planilha é organizada
+
+**Aba `Apostas`** — uma linha por aposta:
+
+| COMPETICAO       | DATA       | ATIRADOR | APOSTADOR | VALOR | PAGO |
+| ---------------- | ---------- | -------- | --------- | ----: | ---- |
+| Etapa de agosto  | 15/08/2026 | Zé       | Ana       |   100 | sim  |
+|                  |            | Zé       | Bruno     |   300 | não  |
+
+`COMPETICAO` e `DATA` em branco repetem o valor da linha de cima.
+
+**Aba `Resultado`** — o pódio **e os percentuais**, uma linha por colocação:
+
+| COMPETICAO      | COLOCACAO | ATIRADOR | PERCENTUAL |
+| --------------- | --------: | -------- | ---------: |
+| Etapa de agosto |         1 | Zé       |         50 |
+|                 |         2 | Rui      |         30 |
+|                 |         3 | Kiko     |         20 |
+
+É aqui que se premia 4º, 5º lugar: basta acrescentar linhas. Para premiar só o
+campeão, deixe uma linha com `100`.
+
+**Aba `Ajustes`** (opcional) — `RATEIO` (`proporcional` ou `igual`), `SOBRA`
+(`redividir` ou `clube`) e `TAXA` (% do clube).
+
+A leitura é tolerante: as colunas podem estar em qualquer ordem, aceitam
+sinônimos (`ETAPA`, `EM QUEM APOSTOU`, `QUEM APOSTOU`, `R$`, `PAGOU`…), o valor
+pode vir como número ou como `R$ 1.234,56`, a data como texto ou data do Excel, e
+o pagamento como `sim/não`, `x`, `ok`, `1`. Linhas incompletas são puladas com
+aviso, em vez de virarem dados errados.
+
+**Reimportar a mesma competição** — mesmo nome e mesma data — substitui as
+apostas dela em vez de duplicar. Outras competições entram como novas.
+
+As abas `Apostas`, `Resultado` e `Ajustes` da exportação voltam a ser importadas:
+dá para exportar, mexer no Excel e trazer de volta.
 
 ---
 
@@ -128,7 +194,8 @@ dependências para instalar**.
 
 ```bash
 npm start     # abre em http://localhost:8000
-npm test      # roda os testes do motor de cálculo
+npm test      # roda os testes do cálculo e da leitura de planilha
+npm run modelo  # regera o modelo-planilha-apostas.xlsx
 ```
 
 Sem Node, qualquer servidor estático serve (`python3 -m http.server 8000`). Abrir
@@ -140,17 +207,26 @@ a leitura de `data/apostas.json`.
 ## Estrutura
 
 ```
-index.html               # a interface (HTML + CSS)
-assets/calc.js           # motor de cálculo: 50/30/20, rateio, acerto, temporada
-assets/app.js            # a tela: telas, formulários, gravação local, publicação
-data/apostas.json        # dados publicados para o clube (opcional)
-test/calc.test.js        # testes do cálculo (node --test)
-scripts/serve.js         # servidor local sem dependências (npm start)
-cloudflare-worker.js     # publicador com senha (opcional)
-.nojekyll                # serve o site sem processamento Jekyll
+index.html                     # a interface (HTML + CSS)
+assets/calc.js                 # motor de cálculo: faixas, rateio, acerto, temporada
+assets/planilha.js             # leitura e escrita das abas da planilha
+assets/app.js                  # as telas, a gravação local e a publicação
+assets/vendor/xlsx.full.min.js # SheetJS, para ler e gravar .xlsx (carregado sob demanda)
+data/apostas.json              # dados publicados para o clube (opcional)
+modelo-planilha-apostas.xlsx   # modelo entregue ao clube
+test/calc.test.js              # testes do cálculo
+test/planilha.test.js          # testes da planilha, incluindo um .xlsx de verdade
+scripts/serve.js               # servidor local sem dependências (npm start)
+scripts/gerar-modelo.js        # regera o modelo (npm run modelo)
+cloudflare-worker.js           # publicador com senha (opcional)
+.nojekyll                      # serve o site sem processamento Jekyll
 ```
 
 Todo o dinheiro é calculado em **centavos inteiros**, com sobras distribuídas pelo
 método do maior resto — a soma dos prêmios sempre fecha exatamente com o bolo, sem
-centavo sumindo no arredondamento. A aba *Acerto de contas* mostra essa
-conferência.
+centavo sumindo no arredondamento, com qualquer combinação de percentuais. A aba
+*Acerto de contas* mostra essa conferência.
+
+O único código de terceiros é o [SheetJS](https://sheetjs.com) (`xlsx` 0.18.5,
+licença Apache-2.0), embutido em `assets/vendor/` para o site funcionar sem
+depender de CDN. Ele só é carregado quando alguém usa a planilha.

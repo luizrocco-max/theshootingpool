@@ -175,6 +175,16 @@
   }
 
   function renderBarraComp() {
+    // o subtítulo mostra a divisão em vigor nesta competição, não um valor fixo
+    const c = compAtual();
+    $("subtitulo").textContent =
+      "Apostas do clube · " +
+      (c
+        ? C.regraDe(c)
+            .premios.map((p, i) => `${String(p).replace(".", ",")}% para o ${C.rotuloPosicao(i)}`)
+            .join(" · ")
+        : "de tiro");
+
     const sel = $("compSel");
     if (!comps().length) {
       sel.innerHTML = `<option>— nenhuma competição —</option>`;
@@ -289,19 +299,61 @@
 
   /* ────────────────────────── aba: resultado ────────────────────────── */
 
+  /** Só o texto da soma dos percentuais — atualizável sem refazer os campos. */
+  function atualizarSomaPct(c) {
+    const soma = C.regraDe(c).premios.reduce((a, b) => a + b, 0);
+    const fecha = Math.abs(soma - 100) <= 0.001;
+    let nota = document.querySelector(".somapct");
+    if (!nota) {
+      nota = document.createElement("div");
+      $("podioInputs").after(nota);
+    }
+    nota.className = "somapct" + (fecha ? "" : " alerta100");
+    nota.innerHTML =
+      `Soma dos percentuais: <b>${esc(String(Math.round(soma * 100) / 100).replace(".", ","))}%</b>` +
+      (fecha ? "" : " — não fecha 100%, mas tudo bem: o bolo é dividido nessa mesma proporção.");
+  }
+
+  /** Uma linha por colocação premiada: nome do atirador + % daquela faixa. */
+  function renderPodioInputs(c) {
+    const regra = C.regraDe(c);
+    $("podioInputs").innerHTML = regra.premios
+      .map(
+        (pct, i) => `<div>
+          <label class="lb">${medalha(i)} ${esc(C.rotuloPosicao(i))} lugar</label>
+          <div class="colocacao">
+            <input id="fPodio${i}" list="dlAtiradores" placeholder="Nome do atirador"
+                   value="${esc((c.resultado || [])[i] || "")}">
+            <input id="fPct${i}" class="pctbox" inputmode="decimal" title="% do bolo desta colocação"
+                   value="${esc(String(pct).replace(".", ","))}">
+          </div>
+        </div>`
+      )
+      .join("");
+    $("btnMenosColocacao").disabled = regra.premios.length <= 1;
+    $("btnMaisColocacao").disabled = regra.premios.length >= C.MAX_COLOCACOES;
+    atualizarSomaPct(c);
+  }
+
+  const medalha = (i) => ["🥇", "🥈", "🥉"][i] || "🏅";
+
   function renderResultado(c, conta) {
     if (!c) {
+      $("podioInputs").innerHTML = "";
       $("premiacao").innerHTML = `<div class="card"><div class="vazio">Crie uma competição primeiro.</div></div>`;
       $("simulacao").innerHTML = "";
       $("alertasResultado").innerHTML = "";
       return;
     }
-    const regra = C.regraDe(c);
-    [0, 1, 2].forEach((i) => {
-      $("fPodio" + i).value = (c.resultado || [])[i] || "";
-      $("pct" + (i + 1)).textContent = regra.premios[i];
-    });
+    renderPodioInputs(c);
+    renderPremiacao(c, conta);
+  }
 
+  /**
+   * Redesenha só o que depende do resultado — os campos do pódio ficam de pé,
+   * senão o campo que a pessoa está preenchendo some no meio da digitação.
+   */
+  function renderPremiacao(c, conta) {
     $("alertasResultado").innerHTML = conta.alertas.length
       ? `<div class="alerta">⚠️ ${conta.alertas.map(esc).join("<br>")}</div>`
       : "";
@@ -313,7 +365,6 @@
     }
     $("simulacao").innerHTML = "";
 
-    const medalhas = ["🥇", "🥈", "🥉"];
     $("premiacao").innerHTML = `
       <div class="card">
         <h3>Divisão do bolo — ${esc(fmt(conta.pote))}${
@@ -335,7 +386,7 @@
               : `${f.pct}%`;
             return `<div class="pod g${i + 1}">
               <span class="pct">${esc(pctReal)}</span>
-              <div class="medal">${medalhas[i]}</div>
+              <div class="medal">${medalha(i)} <span style="font-size:13px;color:var(--muted);font-weight:700">${esc(C.rotuloPosicao(i))}</span></div>
               <div class="nm">${esc(f.atirador || "—")}</div>
               <div class="vl">${esc(fmt(f.valorC))}</div>
               ${corpo}
@@ -531,21 +582,27 @@
           <b>Pendência</b> é o que ainda não foi acertado (positivo: o clube deve a ele).</div>
       </div>`;
 
+    // uma coluna por colocação que a temporada chegou a premiar
+    const nCol = Math.max(1, t.maxColocacoes);
+    const colunas = Array.from({ length: nCol }, (_, i) => i);
     $("rankAtiradores").innerHTML = `
       <div class="card">
         <h3>Atiradores</h3>
         <div class="tablewrap"><table>
           <thead><tr>
-            <th>Atirador</th><th class="num">🥇</th><th class="num">🥈</th><th class="num">🥉</th>
+            <th>Atirador</th>
+            ${colunas
+              .map((i) => `<th class="num" title="${esc(C.rotuloPosicao(i))} lugar">${medalha(i)}${
+                i > 2 ? " " + esc(C.rotuloPosicao(i)) : ""
+              }</th>`)
+              .join("")}
             <th class="num">Apostado nele</th><th class="num">Apostas</th>
           </tr></thead>
           <tbody>${t.atiradores
             .map(
               (s) => `<tr>
                 <td>${esc(s.nome)}</td>
-                <td class="num">${s.podios[0] || "—"}</td>
-                <td class="num">${s.podios[1] || "—"}</td>
-                <td class="num">${s.podios[2] || "—"}</td>
+                ${colunas.map((i) => `<td class="num">${s.podios[i] || "—"}</td>`).join("")}
                 <td class="num">${esc(fmt(s.apostadoC))}</td>
                 <td class="num">${s.nApostas}</td>
               </tr>`
@@ -590,13 +647,32 @@
     const c = compAtual();
     if (!c) { $("ajustes").innerHTML = ""; return; }
     const r = C.regraDe(c);
+    const atual = r.premios.join("/");
+    const modelos = [
+      [50, 30, 20],
+      [60, 40],
+      [100],
+      [40, 30, 20, 10],
+      [40, 25, 15, 12, 8],
+      [35, 25, 18, 12, 6, 4],
+    ];
     $("ajustes").innerHTML = `
       <h3>Ajustes desta competição — ${esc(c.nome)}</h3>
-      <div class="formgrid" style="grid-template-columns:repeat(3,1fr)">
-        <div><label class="lb">% do 1º lugar</label><input id="rP0" inputmode="decimal" value="${r.premios[0]}"></div>
-        <div><label class="lb">% do 2º lugar</label><input id="rP1" inputmode="decimal" value="${r.premios[1]}"></div>
-        <div><label class="lb">% do 3º lugar</label><input id="rP2" inputmode="decimal" value="${r.premios[2]}"></div>
+      <label class="lb">Divisão do bolo por colocação</label>
+      <div style="margin-bottom:6px">
+        ${modelos
+          .map(
+            (m) =>
+              `<button class="chip${m.join("/") === atual ? " on" : ""}" data-premios="${m.join(",")}">${m
+                .map((x) => x + "%")
+                .join(" · ")}</button>`
+          )
+          .join("")}
       </div>
+      <div class="hint" style="margin-bottom:16px">Hoje: <b>${esc(
+        r.premios.map((x, i) => C.rotuloPosicao(i) + " " + String(x).replace(".", ",") + "%").join(" · ")
+      )}</b>. Estes são atalhos — para um valor qualquer, edite direto na aba 🏆 Resultado, onde dá
+        para acrescentar ou tirar colocações.</div>
       <div class="formgrid" style="grid-template-columns:repeat(3,1fr);margin-top:12px">
         <div>
           <label class="lb">Divisão dentro da faixa</label>
@@ -631,12 +707,11 @@
       const v = parseFloat(String($(id).value).replace(",", "."));
       return Number.isFinite(v) ? Math.max(0, v) : 0;
     };
-    const regra = {
-      premios: [num("rP0"), num("rP1"), num("rP2")],
+    const regra = Object.assign(C.regraDe(c), {
       rateio: $("rRateio").value,
       sobra: $("rSobra").value,
       taxaClube: num("rTaxa"),
-    };
+    });
     const soma = regra.premios.reduce((a, b) => a + b, 0);
     if (soma <= 0) { msg("msgRegra", "Os percentuais não podem ser todos zero.", "err"); return; }
     c.regra = regra;
@@ -717,6 +792,7 @@
     salvar();
   }
 
+  /** Aceita texto ou binário (ArrayBuffer, como o .xlsx sai do gerador). */
   function baixarArquivo(nome, conteudo, tipo) {
     const blob = new Blob([conteudo], { type: tipo || "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -743,6 +819,152 @@
       .map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(";"))
       .join("\r\n");
     baixarArquivo(`apostas-${(c.nome || "competicao").replace(/\W+/g, "-").toLowerCase()}.csv`, "﻿" + csv, "text/csv;charset=utf-8");
+  }
+
+  /* ═════════════════════════════ PLANILHA ═══════════════════════════ */
+
+  /** Carrega o leitor de Excel só quando alguém realmente vai usar. */
+  let promessaXLSX = null;
+  function carregarXLSX() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (promessaXLSX) return promessaXLSX;
+    promessaXLSX = new Promise((res, rej) => {
+      const tentar = (src, entaoFalha) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.onload = () => res(window.XLSX);
+        s.onerror = entaoFalha;
+        document.head.appendChild(s);
+      };
+      tentar("assets/vendor/xlsx.full.min.js", () =>
+        tentar("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js", () =>
+          rej(new Error("não consegui carregar o leitor de planilhas"))
+        )
+      );
+    });
+    return promessaXLSX;
+  }
+
+  const LARGURAS = {
+    Instruções: [{ wch: 78 }],
+    Apostas: [{ wch: 26 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 11 }, { wch: 8 }],
+    Resultado: [{ wch: 26 }, { wch: 11 }, { wch: 18 }, { wch: 12 }],
+    Ajustes: [{ wch: 26 }, { wch: 14 }, { wch: 12 }, { wch: 8 }],
+    Acerto: [{ wch: 26 }, { wch: 18 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 13 }],
+    Temporada: [{ wch: 18 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 13 }, { wch: 11 }, { wch: 12 }],
+    Atiradores: [{ wch: 18 }],
+  };
+
+  /** Monta o arquivo .xlsx a partir das abas em formato linha × coluna. */
+  function montarXLSX(XLSX, abas) {
+    const wb = XLSX.utils.book_new();
+    Object.keys(abas).forEach((nome) => {
+      const ws = XLSX.utils.aoa_to_sheet(abas[nome]);
+      if (LARGURAS[nome]) ws["!cols"] = LARGURAS[nome];
+      XLSX.utils.book_append_sheet(wb, ws, nome.slice(0, 31));
+    });
+    return XLSX.write(wb, { type: "array", bookType: "xlsx" });
+  }
+
+  const MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+  async function baixarModelo() {
+    msg("msgPlanilha", "Gerando o modelo…", "info");
+    try {
+      const XLSX = await carregarXLSX();
+      baixarArquivo("modelo-planilha-apostas.xlsx", montarXLSX(XLSX, Planilha.modelo()), MIME_XLSX);
+      msg(
+        "msgPlanilha",
+        "✅ Modelo baixado. Preencha a aba <b>Apostas</b> (e a <b>Resultado</b>, se a prova já acabou) e volte aqui em <b>Importar planilha</b>.",
+        "ok"
+      );
+    } catch (err) {
+      msg("msgPlanilha", "Falha ao gerar o modelo: " + esc(err.message), "err");
+    }
+  }
+
+  async function exportarExcel() {
+    msg("msgPlanilha", "Gerando a planilha…", "info");
+    try {
+      const XLSX = await carregarXLSX();
+      baixarArquivo(`the-shooting-pool-${hoje()}.xlsx`, montarXLSX(XLSX, Planilha.exportar(DADOS)), MIME_XLSX);
+      msg(
+        "msgPlanilha",
+        "✅ Planilha baixada com as abas <b>Apostas</b>, <b>Resultado</b>, <b>Ajustes</b>, " +
+          "<b>Acerto</b>, <b>Temporada</b> e <b>Atiradores</b>. As três primeiras podem ser " +
+          "editadas e importadas de volta.",
+        "ok"
+      );
+    } catch (err) {
+      msg("msgPlanilha", "Falha ao exportar: " + esc(err.message), "err");
+    }
+  }
+
+  async function importarPlanilha(arquivo) {
+    msg("msgPlanilha", "Lendo a planilha…", "info");
+    try {
+      const XLSX = await carregarXLSX();
+      const wb = XLSX.read(await arquivo.arrayBuffer(), { type: "array", cellDates: true });
+      const abas = {};
+      wb.SheetNames.forEach((n) => {
+        abas[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" });
+      });
+
+      const r = Planilha.importar(abas);
+      if (!r.competicoes.length) {
+        msg("msgPlanilha", "Não encontrei apostas válidas.<br>" + r.avisos.map(esc).join("<br>"), "err");
+        return;
+      }
+
+      // competição com mesmo nome e data é atualizada; o resto entra como nova
+      const substituir = [], novas = [];
+      r.competicoes.forEach((nova) => {
+        const igual = comps().find(
+          (c) => C.chave(c.nome) === C.chave(nova.nome) && (c.data || "") === (nova.data || "")
+        );
+        (igual ? substituir : novas).push({ nova, igual });
+      });
+
+      const partes = [];
+      if (novas.length) partes.push(`${novas.length} competição(ões) nova(s)`);
+      if (substituir.length)
+        partes.push(`atualizar ${substituir.length}: ${substituir.map((x) => x.igual.nome).join(", ")}`);
+      if (
+        !confirm(
+          `Importar ${r.resumo.apostas} aposta(s)?\n\n` +
+            partes.join("\n") +
+            (substituir.length ? "\n\nAs apostas das competições atualizadas serão substituídas." : "")
+        )
+      ) {
+        msg("msgPlanilha", "Importação cancelada.", "info");
+        return;
+      }
+
+      substituir.forEach(({ nova, igual }) => {
+        igual.apostas = normalizar({ competicoes: [nova] }).competicoes[0].apostas;
+        igual.resultado = nova.resultado;
+        if (nova.regra) igual.regra = Object.assign(C.regraDe(igual), nova.regra);
+        igual.acertos = {};
+      });
+      novas.forEach(({ nova }) => {
+        const pronta = normalizar({ competicoes: [nova] }).competicoes[0];
+        comps().push(pronta);
+        compId = pronta.id;
+      });
+
+      salvar();
+      const avisos = r.avisos.slice(0, 6);
+      msg(
+        "msgPlanilha",
+        `✅ Importado: <b>${r.resumo.apostas}</b> aposta(s) em <b>${r.competicoes.length}</b> competição(ões).` +
+          (r.resumo.ignoradas ? `<br>${r.resumo.ignoradas} linha(s) foram puladas:` : "") +
+          (avisos.length ? "<br>• " + avisos.map(esc).join("<br>• ") : "") +
+          (r.avisos.length > avisos.length ? `<br>…e mais ${r.avisos.length - avisos.length}.` : ""),
+        r.resumo.ignoradas ? "info" : "ok"
+      );
+    } catch (err) {
+      msg("msgPlanilha", "Não consegui ler a planilha: " + esc(err.message), "err");
+    }
   }
 
   /* ─────────────────────────── publicação ───────────────────────────── */
@@ -835,9 +1057,29 @@
     };
     $("btnCSV").onclick = exportarCSV;
 
-    // resultado
-    [0, 1, 2].forEach((i) => { $("fPodio" + i).onchange = salvarPodio; });
-    $("btnSalvarPodio").onclick = salvarPodio;
+    // planilha
+    $("btnModelo").onclick = baixarModelo;
+    $("btnExportar").onclick = exportarExcel;
+    $("btnImportar").onclick = () => $("fileImportar").click();
+    $("fileImportar").onchange = async (e) => {
+      const f = e.target.files[0];
+      if (f) await importarPlanilha(f);
+      e.target.value = "";
+    };
+
+    // resultado — os campos nascem de novo a cada render, então ouvimos o pai
+    $("podioInputs").addEventListener("change", () => {
+      salvarPodio(true); // grava sem refazer os campos…
+      const c = compAtual();
+      if (!c) return;
+      renderPremiacao(c, C.calcular(c)); // …e atualiza só o que mudou
+      atualizarSomaPct(c);
+      renderBarraComp();
+      renderAbas();
+    });
+    $("btnSalvarPodio").onclick = () => salvarPodio();
+    $("btnMaisColocacao").onclick = () => mudarColocacoes(+1);
+    $("btnMenosColocacao").onclick = () => mudarColocacoes(-1);
     $("btnLimparPodio").onclick = () => {
       const c = compAtual();
       if (!c) return;
@@ -916,6 +1158,18 @@
         render();
         return;
       }
+      const modelo = e.target.closest("[data-premios]");
+      if (modelo) {
+        const c = compAtual();
+        if (!c) return;
+        const premios = modelo.dataset.premios.split(",").map(Number);
+        const resultado = (c.resultado || []).slice(0, premios.length);
+        while (resultado.length < premios.length) resultado.push("");
+        c.regra = Object.assign(C.regraDe(c), { premios });
+        c.resultado = resultado;
+        salvar();
+        return;
+      }
       const btn = e.target.closest("[data-act]");
       if (!btn) return;
       const c = compAtual();
@@ -943,11 +1197,49 @@
     });
   }
 
-  function salvarPodio() {
+  /** Acrescenta ou tira uma colocação premiada da competição atual. */
+  function mudarColocacoes(delta) {
     const c = compAtual();
     if (!c) return;
-    c.resultado = [0, 1, 2].map((i) => C.norm($("fPodio" + i).value));
+    salvarPodio(true); // não perde o que já está digitado
+    const regra = C.regraDe(c);
+    const premios = regra.premios.slice();
+    const resultado = (c.resultado || []).slice();
+
+    if (delta > 0) {
+      if (premios.length >= C.MAX_COLOCACOES) return;
+      // sugere metade da última faixa, para o organizador ajustar
+      const ultima = premios[premios.length - 1] || 10;
+      premios.push(Math.max(1, Math.round(ultima / 2)));
+      resultado.push("");
+    } else {
+      if (premios.length <= 1) return;
+      const nome = resultado[premios.length - 1];
+      if (nome && !confirm(`Tirar o ${C.rotuloPosicao(premios.length - 1)} lugar (${nome}) da premiação?`)) return;
+      premios.pop();
+      resultado.pop();
+    }
+    c.regra = Object.assign({}, regra, { premios });
+    c.resultado = resultado;
     salvar();
+  }
+
+  function salvarPodio(semRender) {
+    const c = compAtual();
+    if (!c) return;
+    const regra = C.regraDe(c);
+    const premios = [];
+    const resultado = [];
+    regra.premios.forEach((pct, i) => {
+      const campoNome = $("fPodio" + i);
+      const campoPct = $("fPct" + i);
+      resultado.push(campoNome ? C.norm(campoNome.value) : (c.resultado || [])[i] || "");
+      const v = campoPct ? parseFloat(String(campoPct.value).replace(",", ".")) : pct;
+      premios.push(Number.isFinite(v) && v >= 0 ? v : pct);
+    });
+    c.resultado = resultado;
+    c.regra = Object.assign({}, regra, { premios });
+    salvar(!semRender);
   }
 
   function abrirModalComp(c) {
