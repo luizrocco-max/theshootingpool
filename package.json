@@ -1,0 +1,14 @@
+{
+  "name": "theshootingpool",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard de apostas do clube de tiro — divisão 50/30/20 do bolo entre os apostadores",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}

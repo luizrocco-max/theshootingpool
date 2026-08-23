@@ -1,0 +1,410 @@
+<!-- The Shooting Pool — apostas do clube de tiro -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Shooting Pool — Apostas do clube</title>
+<meta name="description" content="Controle das apostas do clube de tiro: quem apostou em quem, quem já pagou e quanto cada um recebe (50/30/20).">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+<style>
+  :root{
+    --bg:#0f1210; --panel:#161b16; --panel2:#1e241d; --line:#2b332a;
+    --txt:#e9ece6; --muted:#9aa596;
+    --accent:#e4572e;      /* terracota / clay */
+    --accent2:#e0b83c;     /* dourado */
+    --good:#36c46f; --bad:#f0664a;
+    --gold:#f5c518; --silver:#c7ccd1; --bronze:#c77b3b;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html,body{margin:0}
+  body{font-family:"Segoe UI",system-ui,Arial,sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%, #16221a 0%, transparent 60%),var(--bg);
+    color:var(--txt);font-size:14px;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent2)}
+  .wrap{max-width:1200px;margin:0 auto;padding:18px 18px 40px}
+
+  /* ---------- header ---------- */
+  header.top{display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    background:linear-gradient(135deg,#f6f4ec,#e6e8e2);
+    border:1px solid #cfd3ca;border-radius:18px;padding:14px 22px;
+    box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  header.top .mark{width:60px;height:60px;flex:none;border-radius:14px;display:flex;
+    align-items:center;justify-content:center;font-size:31px;
+    background:linear-gradient(160deg,var(--accent),#a83b1c);box-shadow:0 6px 18px rgba(228,87,46,.4)}
+  .htext h1{margin:0;font-size:22px;letter-spacing:.3px;color:#12160f;font-weight:800}
+  .htext h1 span{color:var(--accent)}
+  .htext p{margin:5px 0 0;color:#4a4f45;font-size:12.5px}
+  .hdocs{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+  .docbtn{background:#fff;border:1px solid #cfd3ca;color:#12160f;border-radius:999px;
+    padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;transition:.12s}
+  .docbtn:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* ---------- barra da competição ---------- */
+  .compbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 0}
+  .compbar select{font-weight:700;min-width:220px;flex:1 1 240px}
+
+  /* ---------- tabs ---------- */
+  nav.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 6px}
+  .tab{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+    padding:9px 15px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s}
+  .tab:hover{border-color:var(--accent2);color:var(--txt)}
+  .tab.active{background:linear-gradient(135deg,var(--accent),#b8431f);color:#fff;
+    border-color:transparent;box-shadow:0 4px 14px rgba(228,87,46,.35)}
+  .tab .pill{background:rgba(0,0,0,.25);border-radius:999px;padding:1px 7px;margin-left:6px;font-size:11px}
+
+  /* ---------- formulários ---------- */
+  input,select,textarea{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    padding:10px 11px;border-radius:8px;font-size:14px;outline:none;font-family:inherit;width:100%}
+  input:focus,select:focus{border-color:var(--accent2)}
+  input[type=checkbox]{width:auto}
+  label.lb{display:block;font-size:11px;color:var(--muted);margin:0 0 5px;
+    text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+  button.btn{background:var(--accent);border:0;color:#fff;padding:10px 16px;border-radius:8px;
+    font-weight:700;font-size:13.5px;cursor:pointer;white-space:nowrap}
+  button.btn:hover{filter:brightness(1.08)}
+  button.btn:disabled{opacity:.45;cursor:not-allowed}
+  button.btn.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--txt)}
+  button.btn.mini{padding:6px 11px;font-size:12px}
+  button.btn.danger{background:transparent;border:1px solid #6b2f22;color:var(--bad)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .card + .card{margin-top:14px}
+  .card h3{margin:0 0 12px;font-size:14px;letter-spacing:.3px}
+  .formgrid{display:grid;grid-template-columns:1.2fr 1.2fr .8fr auto auto;gap:12px;align-items:end}
+  @media(max-width:820px){.formgrid{grid-template-columns:1fr 1fr}
+    .formgrid .full{grid-column:1/-1}}
+  @media(max-width:520px){.formgrid{grid-template-columns:1fr}}
+  .chkline{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:11px}
+  .chkline.on{border-color:var(--good);color:var(--good)}
+
+  /* ---------- kpis ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin:16px 0}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .kpi .v{font-size:23px;font-weight:800;line-height:1.1}
+  .kpi .l{color:var(--muted);font-size:11px;margin-top:6px;text-transform:uppercase;letter-spacing:.5px}
+  .kpi.a .v{color:var(--accent2)} .kpi.g .v{color:var(--good)} .kpi.b .v{color:var(--bad)}
+
+  /* ---------- pódio ---------- */
+  .podium{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:6px 0 4px}
+  @media(max-width:700px){.podium{grid-template-columns:1fr}}
+  .pod{border-radius:16px;padding:16px 14px;border:1px solid var(--line);
+    box-shadow:0 8px 22px rgba(0,0,0,.35)}
+  .pod.g1{background:linear-gradient(160deg,#5a4a12,#2a2410);border-color:#7a6417}
+  .pod.g2{background:linear-gradient(160deg,#3a3f45,#20242a);border-color:#4a515a}
+  .pod.g3{background:linear-gradient(160deg,#4a2f18,#241810);border-color:#6b452a}
+  .pod .medal{font-size:24px}
+  .pod .pct{float:right;font-size:12px;font-weight:800;color:var(--muted)}
+  .pod .nm{font-weight:800;font-size:16px;margin-top:4px;line-height:1.2}
+  .pod .vl{font-size:22px;font-weight:800;margin-top:6px}
+  .pod.g1 .vl{color:var(--gold)} .pod.g2 .vl{color:var(--silver)} .pod.g3 .vl{color:var(--bronze)}
+  .pod ul{list-style:none;margin:10px 0 0;padding:10px 0 0;border-top:1px solid rgba(255,255,255,.12);
+    font-size:12.5px;line-height:1.7}
+  .pod li{display:flex;justify-content:space-between;gap:10px}
+  .pod .vazio{color:var(--muted);font-size:12.5px;margin-top:8px}
+
+  /* ---------- tabelas ---------- */
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px}
+  thead th{background:var(--panel2);color:var(--muted);text-align:left;padding:10px 12px;
+    font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+  tbody td{padding:9px 12px;border-top:1px solid var(--line);white-space:nowrap}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.015)}
+  tbody tr.win{background:linear-gradient(90deg,rgba(224,184,60,.10),transparent)}
+  tbody tr.quit{opacity:.5}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .vazio{color:var(--muted);text-align:center;padding:26px 12px;font-size:13px}
+
+  .tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;
+    border:1px solid transparent;cursor:default}
+  .tag.ok{background:rgba(54,196,111,.15);color:var(--good)}
+  .tag.no{background:rgba(240,102,74,.15);color:var(--bad)}
+  .tag.mut{background:var(--panel2);color:var(--muted)}
+  button.tag{cursor:pointer}
+  button.tag:hover{filter:brightness(1.25)}
+  .pos{font-weight:800;font-size:12px;color:var(--muted)}
+  .chip{background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:999px;
+    padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;margin:0 6px 6px 0;transition:.12s}
+  .chip:hover{border-color:var(--accent2);color:var(--txt)}
+  .chip.on{background:var(--accent);color:#fff;border-color:transparent}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+  .toolbar .sp{margin-left:auto}
+  .note{color:var(--muted);font-size:12.5px;line-height:1.65;margin:12px 2px}
+  .alerta{background:rgba(224,184,60,.10);border:1px solid rgba(224,184,60,.35);color:var(--accent2);
+    border-radius:10px;padding:10px 13px;font-size:12.5px;margin:0 0 12px;line-height:1.6}
+  .money{font-variant-numeric:tabular-nums;font-weight:700}
+  .money.pos{color:var(--good)} .money.neg{color:var(--bad)}
+
+  /* ---------- modal ---------- */
+  .adminfab{position:fixed;right:16px;bottom:16px;width:48px;height:48px;border-radius:50%;
+    background:var(--panel);border:1px solid var(--line);color:var(--muted);font-size:20px;
+    cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:40}
+  .adminfab:hover{color:var(--accent2);border-color:var(--accent2)}
+  @media(max-width:560px){.adminfab{width:42px;height:42px;font-size:17px;right:12px;bottom:12px;opacity:.92}}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;
+    justify-content:center;padding:16px;z-index:50}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;
+    width:100%;max-width:520px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+  .modal h2{margin:0 0 6px;font-size:18px}
+  .modal .close{float:right;cursor:pointer;color:var(--muted);font-size:20px;line-height:1}
+  .modal .lb{margin-top:14px}
+  .modal .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  .msg{margin-top:12px;font-size:13px;padding:10px 12px;border-radius:8px;display:none;line-height:1.6}
+  .msg.ok{background:rgba(54,196,111,.14);color:var(--good);display:block}
+  .msg.err{background:rgba(240,102,74,.14);color:var(--bad);display:block}
+  .msg.info{background:var(--panel2);color:var(--txt);display:block}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.55}
+  .foot{color:var(--muted);font-size:11.5px;text-align:center;margin:30px 0 6px}
+
+  .ajuda{line-height:1.75;font-size:13.5px}
+  .ajuda h4{margin:20px 0 6px;font-size:14px;color:var(--accent2)}
+  .ajuda code{background:var(--panel2);padding:2px 6px;border-radius:5px;font-size:12.5px}
+  .ajuda ol,.ajuda ul{padding-left:20px;margin:6px 0}
+  .exemplo{background:var(--panel2);border-left:3px solid var(--accent);border-radius:0 10px 10px 0;
+    padding:12px 15px;margin:10px 0;font-size:13px;line-height:1.8}
+
+  @media print{
+    body{background:#fff;color:#000}
+    .tabs,.compbar,.adminfab,.toolbar,header .hdocs,.foot,.naoimprime{display:none !important}
+    .card,.kpi,.tablewrap{border-color:#bbb;background:#fff;box-shadow:none}
+    .kpi .v,.money.pos,.money.neg,.pod .vl{color:#000 !important}
+    header.top{box-shadow:none}
+    .tag{border:1px solid #999}
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="mark">🎯</div>
+    <div class="htext">
+      <h1>The Shooting <span>Pool</span></h1>
+      <p>Apostas do clube · 50% para o 1º · 30% para o 2º · 20% para o 3º</p>
+    </div>
+    <div class="hdocs">
+      <button class="docbtn" data-view="ajuda">❓ Como funciona</button>
+    </div>
+  </header>
+
+  <div class="compbar">
+    <select id="compSel" title="Competição"></select>
+    <button class="btn" id="btnNova">+ Nova competição</button>
+    <button class="btn ghost mini" id="btnEditar" title="Editar competição">✏️</button>
+    <button class="btn ghost mini" id="btnExcluir" title="Excluir competição">🗑️</button>
+  </div>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-view="apostas">💵 Apostas</button>
+    <button class="tab" data-view="resultado">🏆 Resultado</button>
+    <button class="tab" data-view="acerto">🤝 Acerto de contas</button>
+    <button class="tab" data-view="temporada">📊 Temporada</button>
+  </nav>
+
+  <section id="view-apostas">
+    <div id="kpisApostas" class="kpis"></div>
+
+    <div class="card naoimprime">
+      <h3>Lançar aposta</h3>
+      <form id="formAposta" class="formgrid" autocomplete="off">
+        <div>
+          <label class="lb" for="fAtirador">Atirador</label>
+          <input id="fAtirador" list="dlAtiradores" placeholder="Em quem apostou" required>
+          <datalist id="dlAtiradores"></datalist>
+        </div>
+        <div>
+          <label class="lb" for="fApostador">Apostador</label>
+          <input id="fApostador" list="dlApostadores" placeholder="Quem apostou" required>
+          <datalist id="dlApostadores"></datalist>
+        </div>
+        <div>
+          <label class="lb" for="fValor">Valor (R$)</label>
+          <input id="fValor" inputmode="decimal" placeholder="100,00" required>
+        </div>
+        <div>
+          <label class="lb">&nbsp;</label>
+          <label class="chkline" id="fPagoWrap"><input type="checkbox" id="fPago"> Já pagou</label>
+        </div>
+        <div>
+          <label class="lb">&nbsp;</label>
+          <button class="btn" type="submit">Adicionar</button>
+        </div>
+      </form>
+      <div class="msg" id="msgAposta"></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0">Apostas da competição</h3>
+        <span class="sp"></span>
+        <button class="btn ghost mini naoimprime" id="btnPagarTodos">✓ Marcar todas como pagas</button>
+        <button class="btn ghost mini naoimprime" id="btnCSV">⬇️ CSV</button>
+      </div>
+      <div id="filtroAtiradores" class="naoimprime"></div>
+      <div id="tabelaApostas"></div>
+    </div>
+  </section>
+
+  <section id="view-resultado" hidden>
+    <div class="card naoimprime">
+      <h3>Pódio da competição</h3>
+      <div class="formgrid" style="grid-template-columns:1fr 1fr 1fr">
+        <div>
+          <label class="lb">🥇 1º lugar — <span id="pct1">50</span>%</label>
+          <input id="fPodio0" list="dlAtiradores" placeholder="Nome do atirador">
+        </div>
+        <div>
+          <label class="lb">🥈 2º lugar — <span id="pct2">30</span>%</label>
+          <input id="fPodio1" list="dlAtiradores" placeholder="Nome do atirador">
+        </div>
+        <div>
+          <label class="lb">🥉 3º lugar — <span id="pct3">20</span>%</label>
+          <input id="fPodio2" list="dlAtiradores" placeholder="Nome do atirador">
+        </div>
+      </div>
+      <div class="row" style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn" id="btnSalvarPodio">Salvar resultado</button>
+        <button class="btn ghost" id="btnLimparPodio">Limpar</button>
+      </div>
+      <div class="hint">Só entram no rateio atiradores que receberam aposta. Se ninguém apostou num
+        colocado, a fatia dele segue a regra escolhida em ⚙️ → Ajustes.</div>
+    </div>
+    <div id="alertasResultado"></div>
+    <div id="premiacao"></div>
+    <div id="simulacao"></div>
+  </section>
+
+  <section id="view-acerto" hidden>
+    <div id="kpisAcerto" class="kpis"></div>
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0">Quem paga e quem recebe</h3>
+        <span class="sp"></span>
+        <button class="btn ghost mini naoimprime" id="btnCopiar">📋 Copiar resumo</button>
+        <button class="btn ghost mini naoimprime" id="btnImprimir">🖨️ Imprimir</button>
+      </div>
+      <div id="tabelaAcerto"></div>
+      <div class="note">
+        <b>Saldo</b> = prêmio ganho − apostas que a pessoa ainda não pagou. Positivo, o clube paga;
+        negativo, a pessoa paga o clube. Ao marcar <b>Acertar</b>, as apostas em aberto dela viram
+        pagas e o acerto sai da lista de pendências.
+      </div>
+    </div>
+    <div id="caixaClube"></div>
+  </section>
+
+  <section id="view-temporada" hidden>
+    <div id="kpisTemporada" class="kpis"></div>
+    <div id="rankApostadores"></div>
+    <div id="rankAtiradores"></div>
+    <div id="listaComps"></div>
+  </section>
+
+  <section id="view-ajuda" hidden>
+    <div class="card ajuda">
+      <h3>Como o dinheiro é dividido</h3>
+      <p>O <b>bolo</b> é a soma de todas as apostas da competição — inclusive as que ainda não
+        foram pagas. Depois do resultado, o bolo é dividido em três faixas:</p>
+      <ul>
+        <li><b>50%</b> entre quem apostou no <b>1º colocado</b>;</li>
+        <li><b>30%</b> entre quem apostou no <b>2º colocado</b>;</li>
+        <li><b>20%</b> entre quem apostou no <b>3º colocado</b>.</li>
+      </ul>
+      <p>Dentro de cada faixa, o valor é rateado <b>proporcionalmente ao que cada um apostou</b>
+        (quem pôs mais, leva mais). Dá para trocar para partes iguais em ⚙️ → Ajustes.</p>
+
+      <h4>Exemplo</h4>
+      <div class="exemplo">
+        Bolo de <b>R$ 1.000</b>. No 1º colocado apostaram <b>Ana (R$ 100)</b> e <b>Bruno (R$ 300)</b>.<br>
+        A faixa do 1º lugar vale <b>R$ 500</b> (50%).<br>
+        Ana entrou com 1/4 dos R$ 400 apostados nesse atirador → leva <b>R$ 125</b>.<br>
+        Bruno entrou com 3/4 → leva <b>R$ 375</b>.
+      </div>
+
+      <h4>Quem não pagou a aposta</h4>
+      <p>A aposta entra no bolo mesmo sem estar paga — ela vira uma dívida da pessoa com o clube.
+        No acerto, o sistema faz a conta líquida:</p>
+      <div class="exemplo">
+        Ana devia <b>R$ 100</b> da aposta e ganhou <b>R$ 125</b> → o clube paga a ela <b>R$ 25</b>.<br>
+        Carla devia <b>R$ 100</b> e não ganhou nada → Carla paga <b>R$ 100</b> ao clube.
+      </div>
+
+      <h4>Ninguém apostou num dos colocados</h4>
+      <p>Por padrão a fatia dele é <b>redividida</b> entre as faixas que têm apostador (mantendo a
+        proporção 50/30/20 entre as que sobraram). Em ⚙️ → Ajustes dá para mandar essa sobra para
+        o caixa do clube.</p>
+
+      <h4>Passo a passo de uma competição</h4>
+      <ol>
+        <li>Crie a competição (<b>+ Nova competição</b>) com nome e data.</li>
+        <li>Lance as apostas na aba <b>Apostas</b>, marcando quem já pagou.</li>
+        <li>Terminada a prova, informe o pódio na aba <b>Resultado</b>.</li>
+        <li>Use a aba <b>Acerto de contas</b> para pagar e cobrar — e marque cada um como acertado.</li>
+      </ol>
+
+      <h4>Onde ficam os dados</h4>
+      <p>Tudo é gravado <b>neste aparelho</b> (no próprio navegador). Nada sai daqui sozinho.
+        Faça o backup pelo ⚙️ → <b>Baixar backup</b> de vez em quando, e use
+        <b>Publicar</b> se quiser que o clube inteiro veja pelo site.</p>
+    </div>
+    <div class="card ajuda" id="ajustes"></div>
+  </section>
+
+  <div class="foot">The Shooting Pool · o cálculo roda no seu navegador, sem servidor</div>
+</div>
+
+<button class="adminfab" id="btnAdmin" title="Ajustes, backup e publicação">⚙️</button>
+
+<!-- modal: competição -->
+<div class="overlay" id="modalComp" hidden>
+  <div class="modal">
+    <span class="close" data-fechar="modalComp">✕</span>
+    <h2 id="tituloComp">Nova competição</h2>
+    <label class="lb" for="cNome">Nome</label>
+    <input id="cNome" placeholder="Ex.: Etapa de agosto">
+    <label class="lb" for="cData">Data</label>
+    <input id="cData" type="date">
+    <div class="row">
+      <button class="btn" id="btnSalvarComp">Salvar</button>
+      <button class="btn ghost" data-fechar="modalComp">Cancelar</button>
+    </div>
+    <div class="msg" id="msgComp"></div>
+  </div>
+</div>
+
+<!-- modal: admin -->
+<div class="overlay" id="modalAdmin" hidden>
+  <div class="modal">
+    <span class="close" data-fechar="modalAdmin">✕</span>
+    <h2>⚙️ Ajustes e backup</h2>
+    <p class="hint">Os dados ficam guardados neste aparelho. Publicar é opcional: serve para o
+      clube inteiro ver os números pelo site.</p>
+
+    <h3 style="margin:20px 0 0;font-size:14px">Backup</h3>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" id="btnBaixar">⬇️ Baixar backup (.json)</button>
+      <button class="btn ghost" id="btnRestaurar">⬆️ Restaurar backup</button>
+      <input type="file" id="fileRestaurar" accept=".json" hidden>
+    </div>
+
+    <h3 style="margin:22px 0 0;font-size:14px">Publicar para o clube</h3>
+    <label class="lb" for="admUrl">Endereço do publicador (Cloudflare Worker)</label>
+    <input id="admUrl" placeholder="https://....workers.dev">
+    <label class="lb" for="admSenha">Senha do organizador</label>
+    <input id="admSenha" type="password" placeholder="••••••••">
+    <label class="chkline" style="margin-top:10px">
+      <input type="checkbox" id="admLembrar"> Lembrar neste aparelho
+    </label>
+    <div class="row">
+      <button class="btn" id="btnPublicar">💾 Publicar</button>
+      <button class="btn ghost" id="btnBaixarRemoto">↺ Trazer o que está publicado</button>
+    </div>
+    <div class="hint">Sem publicador configurado, use o backup: baixe o <code>.json</code> e envie
+      para o repositório em <code>data/apostas.json</code>.</div>
+
+    <h3 style="margin:22px 0 0;font-size:14px">Zona de perigo</h3>
+    <div class="row">
+      <button class="btn danger" id="btnApagar">Apagar todos os dados deste aparelho</button>
+    </div>
+    <div class="msg" id="msgAdmin"></div>
+  </div>
+</div>
+
+<script src="assets/calc.js"></script>
+<script src="assets/app.js"></script>

@@ -1,0 +1,1002 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   The Shooting Pool — interface
+   ───────────────────────────────────────────────────────────────────────────
+   Guarda tudo no próprio navegador (localStorage) e usa assets/calc.js para
+   fazer as contas. Publicar no site do clube é opcional.
+═══════════════════════════════════════════════════════════════════════════ */
+(function () {
+  "use strict";
+
+  const C = window.Calc;
+  const CHAVE_LOCAL = "tsp_dados_v1";
+  const CHAVE_PUB = "tsp_publicador";
+  const CAMINHO_DADOS = "data/apostas.json";
+
+  /* ──────────────────────────── utilidades ──────────────────────────── */
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) =>
+    String(s == null ? "" : s).replace(/[&<>"']/g, (m) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])
+    );
+  const fmt = (c) => C.fmt(c);
+  const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const hoje = () => new Date().toISOString().slice(0, 10);
+  const dataBR = (iso) => {
+    if (!iso) return "";
+    const [a, m, d] = String(iso).split("-");
+    return d ? `${d}/${m}/${a}` : String(iso);
+  };
+  /** "Etapa de agosto · 23/08/2026" — sem repetir a data se o nome já tem. */
+  const rotuloComp = (c) => {
+    const d = dataBR(c.data);
+    return c.nome + (d && !c.nome.includes(d) ? " · " + d : "");
+  };
+  const agora = () => {
+    const n = new Date(), p = (x) => String(x).padStart(2, "0");
+    return `${p(n.getDate())}/${p(n.getMonth() + 1)}/${n.getFullYear()} ${p(n.getHours())}:${p(n.getMinutes())}`;
+  };
+  const money = (c) =>
+    `<span class="money ${c > 0 ? "pos" : c < 0 ? "neg" : ""}">${esc(fmt(c))}</span>`;
+
+  function msg(el, texto, tipo) {
+    const d = $(el);
+    if (!d) return;
+    if (!texto) { d.className = "msg"; d.innerHTML = ""; return; }
+    d.className = "msg " + (tipo || "info");
+    d.innerHTML = texto;
+  }
+
+  /* ─────────────────────────────── estado ───────────────────────────── */
+
+  let DADOS = { versao: 1, atualizado_em: null, regraPadrao: null, competicoes: [] };
+  let compId = null;
+  let view = "apostas";
+  let filtroAtirador = null;
+
+  function normalizar(d) {
+    const out = {
+      versao: 1,
+      atualizado_em: (d && d.atualizado_em) || null,
+      regraPadrao: (d && d.regraPadrao) || null,
+      competicoes: [],
+    };
+    ((d && d.competicoes) || []).forEach((c) => {
+      out.competicoes.push({
+        id: c.id || uid("c"),
+        nome: C.norm(c.nome) || "Competição",
+        data: c.data || "",
+        regra: c.regra || null,
+        resultado: Array.isArray(c.resultado) ? c.resultado.slice(0, 3) : ["", "", ""],
+        acertos: c.acertos || {},
+        apostas: ((c.apostas) || []).map((a) => ({
+          id: a.id || uid("a"),
+          atirador: C.norm(a.atirador),
+          apostador: C.norm(a.apostador),
+          valor: Number(a.valor) || 0,
+          pago: !!a.pago,
+          pagoAuto: !!a.pagoAuto,
+          em: a.em || null,
+        })),
+      });
+    });
+    return out;
+  }
+
+  function carregar() {
+    try {
+      const bruto = localStorage.getItem(CHAVE_LOCAL);
+      if (bruto) { DADOS = normalizar(JSON.parse(bruto)); return true; }
+    } catch (e) { /* dados corrompidos: começa limpo */ }
+    return false;
+  }
+
+  function salvar(rerender = true) {
+    DADOS.atualizado_em = agora();
+    try {
+      localStorage.setItem(CHAVE_LOCAL, JSON.stringify(DADOS));
+    } catch (e) {
+      alert("Não consegui gravar neste navegador. Faça um backup pelo ⚙️ antes de continuar.");
+    }
+    if (rerender) render();
+  }
+
+  const comps = () => DADOS.competicoes;
+  const compAtual = () => comps().find((c) => c.id === compId) || null;
+
+  /* ───────────────────────── competições (CRUD) ─────────────────────── */
+
+  function novaCompeticao(nome, data) {
+    const c = {
+      id: uid("c"),
+      nome: C.norm(nome) || "Etapa de " + dataBR(data || hoje()),
+      data: data || hoje(),
+      regra: DADOS.regraPadrao ? Object.assign({}, DADOS.regraPadrao) : null,
+      resultado: ["", "", ""],
+      acertos: {},
+      apostas: [],
+    };
+    comps().push(c);
+    compId = c.id;
+    return c;
+  }
+
+  function ordenarComps() {
+    comps().sort((a, b) => String(a.data).localeCompare(String(b.data)) || a.nome.localeCompare(b.nome, "pt-BR"));
+  }
+
+  /* ───────────────────────────── datalists ──────────────────────────── */
+
+  function nomesConhecidos() {
+    const atiradores = new Map(), apostadores = new Map();
+    comps().forEach((c) => {
+      (c.apostas || []).forEach((a) => {
+        if (a.atirador) atiradores.set(C.chave(a.atirador), a.atirador);
+        if (a.apostador) apostadores.set(C.chave(a.apostador), a.apostador);
+      });
+      (c.resultado || []).forEach((n) => { if (n) atiradores.set(C.chave(n), C.norm(n)); });
+    });
+    const ord = (m) => [...m.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return { atiradores: ord(atiradores), apostadores: ord(apostadores) };
+  }
+
+  function renderDatalists() {
+    const { atiradores, apostadores } = nomesConhecidos();
+    const op = (arr) => arr.map((n) => `<option value="${esc(n)}">`).join("");
+    $("dlAtiradores").innerHTML = op(atiradores);
+    $("dlApostadores").innerHTML = op(apostadores);
+  }
+
+  /* ══════════════════════════════ RENDER ════════════════════════════ */
+
+  function render() {
+    ordenarComps();
+    if (!compAtual() && comps().length) compId = comps()[comps().length - 1].id;
+
+    renderBarraComp();
+    renderDatalists();
+    renderAbas();
+
+    const c = compAtual();
+    const conta = c ? C.calcular(c) : null;
+
+    if (view === "apostas") renderApostas(c, conta);
+    if (view === "resultado") renderResultado(c, conta);
+    if (view === "acerto") renderAcerto(c, conta);
+    if (view === "temporada") renderTemporada();
+    if (view === "ajuda") renderAjustes();
+
+    ["apostas", "resultado", "acerto", "temporada", "ajuda"].forEach((v) => {
+      $("view-" + v).hidden = v !== view;
+    });
+    document.querySelectorAll("#tabs .tab").forEach((t) => {
+      t.classList.toggle("active", t.dataset.view === view);
+    });
+  }
+
+  function renderBarraComp() {
+    const sel = $("compSel");
+    if (!comps().length) {
+      sel.innerHTML = `<option>— nenhuma competição —</option>`;
+      return;
+    }
+    sel.innerHTML = comps()
+      .map((c) => {
+        const n = (c.apostas || []).length;
+        return `<option value="${esc(c.id)}"${c.id === compId ? " selected" : ""}>${esc(
+          rotuloComp(c)
+        )} (${n})</option>`;
+      })
+      .join("");
+  }
+
+  function renderAbas() {
+    const c = compAtual();
+    const nAb = c ? C.calcular(c).apostadores.filter((p) => !p.acertado && p.saldoC !== 0).length : 0;
+    const tab = document.querySelector('#tabs .tab[data-view="acerto"]');
+    tab.innerHTML = "🤝 Acerto de contas" + (nAb ? ` <span class="pill">${nAb}</span>` : "");
+  }
+
+  function kpis(destino, itens) {
+    $(destino).innerHTML = itens
+      .map((k) => `<div class="kpi ${k.cls || ""}"><div class="v">${k.v}</div><div class="l">${esc(k.l)}</div></div>`)
+      .join("");
+  }
+
+  /* ─────────────────────────── aba: apostas ─────────────────────────── */
+
+  function renderApostas(c, conta) {
+    if (!c) {
+      kpis("kpisApostas", []);
+      $("tabelaApostas").innerHTML = `<div class="vazio">Crie uma competição para começar.</div>`;
+      $("filtroAtiradores").innerHTML = "";
+      return;
+    }
+    const t = conta.totais;
+    kpis("kpisApostas", [
+      { v: esc(fmt(conta.pote)), l: "Bolo da competição", cls: "a" },
+      { v: esc(fmt(t.pagoC)), l: "Já recebido", cls: "g" },
+      { v: esc(fmt(t.devendoC)), l: "A receber", cls: t.devendoC ? "b" : "" },
+      { v: esc(fmt(t.premiosC)), l: "Em prêmios" },
+      { v: `${t.nApostas} <span style="font-size:13px;color:var(--muted)">/ ${t.nApostadores} pess.</span>`, l: "Apostas" },
+    ]);
+
+    // filtro por atirador
+    const porAtirador = new Map();
+    conta.apostas.forEach((a) => {
+      const k = C.chave(a.atirador);
+      if (!porAtirador.has(k)) porAtirador.set(k, { nome: a.atirador, totalC: 0, n: 0 });
+      const g = porAtirador.get(k);
+      g.totalC += a.valorC; g.n += 1;
+    });
+    const lista = [...porAtirador.entries()].sort((a, b) => b[1].totalC - a[1].totalC);
+    $("filtroAtiradores").innerHTML = lista.length
+      ? `<div style="margin-bottom:10px">
+          <button class="chip${filtroAtirador ? "" : " on"}" data-filtro="">Todos (${conta.apostas.length})</button>` +
+        lista
+          .map(
+            ([k, g]) =>
+              `<button class="chip${filtroAtirador === k ? " on" : ""}" data-filtro="${esc(k)}">${esc(
+                g.nome
+              )} · ${esc(fmt(g.totalC))}</button>`
+          )
+          .join("") +
+        `</div>`
+      : "";
+
+    const linhas = conta.apostas.filter((a) => !filtroAtirador || C.chave(a.atirador) === filtroAtirador);
+    if (!linhas.length) {
+      $("tabelaApostas").innerHTML = `<div class="vazio">${
+        conta.apostas.length ? "Nenhuma aposta nesse filtro." : "Nenhuma aposta lançada ainda."
+      }</div>`;
+      return;
+    }
+
+    const temPremio = conta.totais.premiosC > 0;
+    $("tabelaApostas").innerHTML = `
+      <div class="tablewrap"><table>
+        <thead><tr>
+          <th>Atirador</th><th>Apostador</th><th class="num">Valor</th>
+          <th>Pagamento</th>${temPremio ? '<th class="num">Prêmio</th>' : ""}
+          <th class="naoimprime"></th>
+        </tr></thead>
+        <tbody>${linhas
+          .map((a) => {
+            const venceu = a.premioC > 0;
+            return `<tr class="${venceu ? "win" : ""}">
+              <td>${esc(a.atirador)}${posicaoTag(conta, a.atirador)}</td>
+              <td>${esc(a.apostador)}</td>
+              <td class="num">${esc(fmt(a.valorC))}</td>
+              <td><button class="tag ${a.pago ? "ok" : "no"}" data-act="pago" data-id="${esc(a.id)}">${
+                a.pago ? "✓ pago" : "✗ não pagou"
+              }</button></td>
+              ${temPremio ? `<td class="num">${a.premioC ? money(a.premioC) : '<span class="tag mut">—</span>'}</td>` : ""}
+              <td class="naoimprime"><button class="btn ghost mini" data-act="excluir" data-id="${esc(
+                a.id
+              )}" title="Excluir aposta">✕</button></td>
+            </tr>`;
+          })
+          .join("")}</tbody>
+      </table></div>`;
+  }
+
+  function posicaoTag(conta, atirador) {
+    const f = conta.faixas.find((x) => x.atirador && !x.repetida && C.chave(x.atirador) === C.chave(atirador));
+    if (!f) return "";
+    const medalha = ["🥇", "🥈", "🥉"][f.posicao - 1];
+    return ` <span class="pos">${medalha}</span>`;
+  }
+
+  /* ────────────────────────── aba: resultado ────────────────────────── */
+
+  function renderResultado(c, conta) {
+    if (!c) {
+      $("premiacao").innerHTML = `<div class="card"><div class="vazio">Crie uma competição primeiro.</div></div>`;
+      $("simulacao").innerHTML = "";
+      $("alertasResultado").innerHTML = "";
+      return;
+    }
+    const regra = C.regraDe(c);
+    [0, 1, 2].forEach((i) => {
+      $("fPodio" + i).value = (c.resultado || [])[i] || "";
+      $("pct" + (i + 1)).textContent = regra.premios[i];
+    });
+
+    $("alertasResultado").innerHTML = conta.alertas.length
+      ? `<div class="alerta">⚠️ ${conta.alertas.map(esc).join("<br>")}</div>`
+      : "";
+
+    if (!conta.definido) {
+      $("premiacao").innerHTML = "";
+      renderSimulacao(c, conta);
+      return;
+    }
+    $("simulacao").innerHTML = "";
+
+    const medalhas = ["🥇", "🥈", "🥉"];
+    $("premiacao").innerHTML = `
+      <div class="card">
+        <h3>Divisão do bolo — ${esc(fmt(conta.pote))}${
+      conta.taxaC ? ` <span style="color:var(--muted);font-weight:400">(taxa do clube: ${esc(fmt(conta.taxaC))})</span>` : ""
+    }</h3>
+        <div class="podium">${conta.faixas
+          .map((f, i) => {
+            const corpo = !f.atirador
+              ? `<div class="vazio">— sem colocado —</div>`
+              : f.repetida
+              ? `<div class="vazio">${esc(f.atirador)} já está numa colocação melhor</div>`
+              : !f.apostas.length
+              ? `<div class="vazio">ninguém apostou nele</div>`
+              : `<ul>${f.apostadores
+                  .map((p) => `<li><span>${esc(p.nome)}</span><span>${esc(fmt(p.premioC))}</span></li>`)
+                  .join("")}</ul>`;
+            const pctReal = f.ativa && Math.abs(f.pctEfetivo - f.pct) > 0.01
+              ? `${f.pct}% → ${f.pctEfetivo.toFixed(1)}%`
+              : `${f.pct}%`;
+            return `<div class="pod g${i + 1}">
+              <span class="pct">${esc(pctReal)}</span>
+              <div class="medal">${medalhas[i]}</div>
+              <div class="nm">${esc(f.atirador || "—")}</div>
+              <div class="vl">${esc(fmt(f.valorC))}</div>
+              ${corpo}
+            </div>`;
+          })
+          .join("")}</div>
+      </div>`;
+  }
+
+  function renderSimulacao(c, conta) {
+    const sim = C.simular(c);
+    if (!sim.length) {
+      $("simulacao").innerHTML = `<div class="card"><div class="vazio">Lance as apostas para ver a simulação.</div></div>`;
+      return;
+    }
+    $("simulacao").innerHTML = `
+      <div class="card">
+        <h3>E se ganhar? — prêmio de cada atirador antes do resultado</h3>
+        <div class="tablewrap"><table>
+          <thead><tr>
+            <th>Atirador</th><th class="num">Apostado nele</th><th class="num">Apostadores</th>
+            <th class="num">Se for 1º</th><th class="num">Se for 2º</th><th class="num">Se for 3º</th>
+            <th class="num">Retorno (1º)</th>
+          </tr></thead>
+          <tbody>${sim
+            .map(
+              (s) => `<tr>
+                <td>${esc(s.atirador)}</td>
+                <td class="num">${esc(fmt(s.apostadoC))}</td>
+                <td class="num">${s.nApostadores}</td>
+                <td class="num">${esc(fmt(s.premios[0]))}</td>
+                <td class="num">${esc(fmt(s.premios[1]))}</td>
+                <td class="num">${esc(fmt(s.premios[2]))}</td>
+                <td class="num">${s.retorno[0].toFixed(2).replace(".", ",")}×</td>
+              </tr>`
+            )
+            .join("")}</tbody>
+        </table></div>
+        <div class="note">“Retorno” é quanto volta para cada R$ 1 apostado naquele atirador, se ele
+          terminar em 1º. Os valores consideram o bolo de agora e todas as faixas com apostador.</div>
+      </div>`;
+  }
+
+  /* ──────────────────────────── aba: acerto ─────────────────────────── */
+
+  function renderAcerto(c, conta) {
+    if (!c) {
+      kpis("kpisAcerto", []);
+      $("tabelaAcerto").innerHTML = `<div class="vazio">Crie uma competição primeiro.</div>`;
+      $("caixaClube").innerHTML = "";
+      return;
+    }
+    const t = conta.totais;
+    kpis("kpisAcerto", [
+      { v: esc(fmt(t.aPagarC)), l: "O clube paga", cls: "g" },
+      { v: esc(fmt(t.aReceberC)), l: "O clube recebe", cls: "b" },
+      { v: esc(fmt(t.aReceberC - t.aPagarC)), l: "Efeito no caixa", cls: "a" },
+      { v: String(conta.apostadores.filter((p) => !p.acertado).length), l: "Acertos em aberto" },
+    ]);
+
+    if (!conta.apostadores.length) {
+      $("tabelaAcerto").innerHTML = `<div class="vazio">Nenhuma aposta lançada ainda.</div>`;
+      $("caixaClube").innerHTML = "";
+      return;
+    }
+
+    const linha = (p) => {
+      const situacao = p.acertado
+        ? `<span class="tag mut">acertado${p.acertadoEm ? " · " + esc(dataBR(p.acertadoEm)) : ""}</span>`
+        : p.saldoC > 0
+        ? `<span class="tag ok">clube paga</span>`
+        : p.saldoC < 0
+        ? `<span class="tag no">ele paga</span>`
+        : `<span class="tag mut">quite</span>`;
+      return `<tr class="${p.acertado ? "quit" : ""}">
+        <td>${esc(p.nome)}</td>
+        <td class="num">${esc(fmt(p.apostadoC))}</td>
+        <td class="num">${p.devendoC ? esc(fmt(p.devendoC)) : "—"}</td>
+        <td class="num">${p.premioC ? esc(fmt(p.premioC)) : "—"}</td>
+        <td class="num">${money(p.saldoC)}</td>
+        <td>${situacao}</td>
+        <td class="naoimprime">${
+          p.acertado
+            ? `<button class="btn ghost mini" data-act="desacertar" data-chave="${esc(p.chave)}">desfazer</button>`
+            : `<button class="btn mini" data-act="acertar" data-chave="${esc(p.chave)}">acertar</button>`
+        }</td>
+      </tr>`;
+    };
+
+    $("tabelaAcerto").innerHTML = `
+      <div class="tablewrap"><table>
+        <thead><tr>
+          <th>Apostador</th><th class="num">Apostou</th><th class="num">Deve</th>
+          <th class="num">Prêmio</th><th class="num">Saldo</th><th>Situação</th><th class="naoimprime"></th>
+        </tr></thead>
+        <tbody>${conta.apostadores.map(linha).join("")}</tbody>
+      </table></div>`;
+
+    const conf = conta.pote - conta.totais.premiosC - conta.taxaC - conta.sobraClubeC;
+    $("caixaClube").innerHTML = `
+      <div class="card">
+        <h3>Caixa do clube nesta competição</h3>
+        <div class="tablewrap"><table style="min-width:auto">
+          <tbody>
+            <tr><td>Entrou (apostas já pagas)</td><td class="num">${esc(fmt(t.pagoC))}</td></tr>
+            <tr><td>Ainda a receber</td><td class="num">${esc(fmt(t.devendoC))}</td></tr>
+            <tr><td>Sai em prêmios</td><td class="num">${esc(fmt(t.premiosC))}</td></tr>
+            ${conta.taxaC ? `<tr><td>Taxa do clube (${C.regraDe(c).taxaClube}%)</td><td class="num">${esc(fmt(conta.taxaC))}</td></tr>` : ""}
+            ${conta.sobraClubeC && conta.definido ? `<tr><td>Fatia sem apostador retida</td><td class="num">${esc(fmt(conta.sobraClubeC))}</td></tr>` : ""}
+            <tr><td><b>Fica com o clube no fim</b></td><td class="num"><b>${esc(fmt(conta.definido ? conta.receitaClubeC : 0))}</b></td></tr>
+          </tbody>
+        </table></div>
+        <div class="note">${
+          conf === 0
+            ? "✓ Conferido: cada centavo do bolo está distribuído."
+            : "⚠️ Diferença de " + esc(fmt(conf)) + " — avise o desenvolvedor."
+        }</div>
+      </div>`;
+  }
+
+  function resumoTexto() {
+    const c = compAtual();
+    if (!c) return "";
+    const conta = C.calcular(c);
+    const linhas = [];
+    linhas.push(`🎯 ${rotuloComp(c)}`);
+    linhas.push(`Bolo: ${fmt(conta.pote)}`);
+    if (conta.definido) {
+      conta.faixas.forEach((f, i) => {
+        if (!f.atirador) return;
+        linhas.push(`${["🥇", "🥈", "🥉"][i]} ${f.atirador} — ${fmt(f.valorC)}`);
+      });
+    }
+    linhas.push("");
+    linhas.push("ACERTO:");
+    const abertos = conta.apostadores.filter((p) => !p.acertado);
+    const receber = abertos.filter((p) => p.saldoC > 0);
+    const pagar = abertos.filter((p) => p.saldoC < 0);
+    if (receber.length) {
+      linhas.push("O clube paga:");
+      receber.forEach((p) => linhas.push(`  • ${p.nome}: ${fmt(p.saldoC)}`));
+    }
+    if (pagar.length) {
+      linhas.push("O clube recebe:");
+      pagar.forEach((p) => linhas.push(`  • ${p.nome}: ${fmt(-p.saldoC)}`));
+    }
+    if (!receber.length && !pagar.length) linhas.push("  tudo acertado ✓");
+    return linhas.join("\n");
+  }
+
+  /* ─────────────────────────── aba: temporada ───────────────────────── */
+
+  function renderTemporada() {
+    const t = C.temporada(DADOS);
+    kpis("kpisTemporada", [
+      { v: String(t.totais.competicoes), l: "Competições" },
+      { v: esc(fmt(t.totais.movimentadoC)), l: "Movimentado", cls: "a" },
+      { v: esc(fmt(t.totais.premiosC)), l: "Pago em prêmios" },
+      { v: esc(fmt(t.totais.aPagarC)), l: "Clube deve", cls: t.totais.aPagarC ? "g" : "" },
+      { v: esc(fmt(t.totais.aReceberC)), l: "Clube tem a receber", cls: t.totais.aReceberC ? "b" : "" },
+    ]);
+
+    if (!t.apostadores.length) {
+      $("rankApostadores").innerHTML = `<div class="card"><div class="vazio">Sem apostas registradas ainda.</div></div>`;
+      $("rankAtiradores").innerHTML = "";
+      $("listaComps").innerHTML = "";
+      return;
+    }
+
+    $("rankApostadores").innerHTML = `
+      <div class="card">
+        <h3>Apostadores da temporada</h3>
+        <div class="tablewrap"><table>
+          <thead><tr>
+            <th>#</th><th>Apostador</th><th class="num">Apostou</th><th class="num">Ganhou</th>
+            <th class="num">Lucro</th><th class="num">Competições</th><th class="num">Pendência</th>
+          </tr></thead>
+          <tbody>${t.apostadores
+            .map(
+              (p, i) => `<tr>
+                <td class="pos">${i + 1}</td>
+                <td>${esc(p.nome)}</td>
+                <td class="num">${esc(fmt(p.apostadoC))}</td>
+                <td class="num">${esc(fmt(p.premioC))}</td>
+                <td class="num">${money(p.lucroC)}</td>
+                <td class="num">${p.premiadas}/${p.competicoes}</td>
+                <td class="num">${p.pendenteC ? money(p.pendenteC) : "—"}</td>
+              </tr>`
+            )
+            .join("")}</tbody>
+        </table></div>
+        <div class="note"><b>Lucro</b> = tudo que ganhou menos tudo que apostou na temporada.
+          <b>Pendência</b> é o que ainda não foi acertado (positivo: o clube deve a ele).</div>
+      </div>`;
+
+    $("rankAtiradores").innerHTML = `
+      <div class="card">
+        <h3>Atiradores</h3>
+        <div class="tablewrap"><table>
+          <thead><tr>
+            <th>Atirador</th><th class="num">🥇</th><th class="num">🥈</th><th class="num">🥉</th>
+            <th class="num">Apostado nele</th><th class="num">Apostas</th>
+          </tr></thead>
+          <tbody>${t.atiradores
+            .map(
+              (s) => `<tr>
+                <td>${esc(s.nome)}</td>
+                <td class="num">${s.podios[0] || "—"}</td>
+                <td class="num">${s.podios[1] || "—"}</td>
+                <td class="num">${s.podios[2] || "—"}</td>
+                <td class="num">${esc(fmt(s.apostadoC))}</td>
+                <td class="num">${s.nApostas}</td>
+              </tr>`
+            )
+            .join("")}</tbody>
+        </table></div>
+      </div>`;
+
+    $("listaComps").innerHTML = `
+      <div class="card">
+        <h3>Competições</h3>
+        <div class="tablewrap"><table>
+          <thead><tr>
+            <th>Competição</th><th>Data</th><th>Pódio</th><th class="num">Bolo</th>
+            <th class="num">Apostas</th><th>Situação</th>
+          </tr></thead>
+          <tbody>${t.comps
+            .map(({ comp, conta }) => {
+              const abertos = conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0).length;
+              const podio = conta.faixas.filter((f) => f.atirador).map((f) => f.atirador).join(" · ");
+              return `<tr>
+                <td><a href="#" data-act="abrir" data-id="${esc(comp.id)}">${esc(comp.nome)}</a></td>
+                <td>${esc(dataBR(comp.data))}</td>
+                <td>${esc(podio) || '<span class="tag mut">sem resultado</span>'}</td>
+                <td class="num">${esc(fmt(conta.pote))}</td>
+                <td class="num">${conta.totais.nApostas}</td>
+                <td>${
+                  abertos
+                    ? `<span class="tag no">${abertos} em aberto</span>`
+                    : `<span class="tag ok">acertada</span>`
+                }</td>
+              </tr>`;
+            })
+            .join("")}</tbody>
+        </table></div>
+      </div>`;
+  }
+
+  /* ──────────────────────────── ajustes ─────────────────────────────── */
+
+  function renderAjustes() {
+    const c = compAtual();
+    if (!c) { $("ajustes").innerHTML = ""; return; }
+    const r = C.regraDe(c);
+    $("ajustes").innerHTML = `
+      <h3>Ajustes desta competição — ${esc(c.nome)}</h3>
+      <div class="formgrid" style="grid-template-columns:repeat(3,1fr)">
+        <div><label class="lb">% do 1º lugar</label><input id="rP0" inputmode="decimal" value="${r.premios[0]}"></div>
+        <div><label class="lb">% do 2º lugar</label><input id="rP1" inputmode="decimal" value="${r.premios[1]}"></div>
+        <div><label class="lb">% do 3º lugar</label><input id="rP2" inputmode="decimal" value="${r.premios[2]}"></div>
+      </div>
+      <div class="formgrid" style="grid-template-columns:repeat(3,1fr);margin-top:12px">
+        <div>
+          <label class="lb">Divisão dentro da faixa</label>
+          <select id="rRateio">
+            <option value="proporcional"${r.rateio === "proporcional" ? " selected" : ""}>Proporcional ao valor apostado</option>
+            <option value="igual"${r.rateio === "igual" ? " selected" : ""}>Partes iguais entre apostadores</option>
+          </select>
+        </div>
+        <div>
+          <label class="lb">Faixa sem apostador</label>
+          <select id="rSobra">
+            <option value="redistribuir"${r.sobra === "redistribuir" ? " selected" : ""}>Redividir entre as outras</option>
+            <option value="clube"${r.sobra === "clube" ? " selected" : ""}>Fica com o clube</option>
+          </select>
+        </div>
+        <div><label class="lb">Taxa do clube (%)</label><input id="rTaxa" inputmode="decimal" value="${r.taxaClube}"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+        <button class="btn" id="btnSalvarRegra">Salvar ajustes</button>
+        <button class="btn ghost" id="btnRegraPadrao">Usar também nas próximas</button>
+      </div>
+      <div class="msg" id="msgRegra"></div>`;
+
+    $("btnSalvarRegra").onclick = () => salvarRegra(false);
+    $("btnRegraPadrao").onclick = () => salvarRegra(true);
+  }
+
+  function salvarRegra(virarPadrao) {
+    const c = compAtual();
+    if (!c) return;
+    const num = (id) => {
+      const v = parseFloat(String($(id).value).replace(",", "."));
+      return Number.isFinite(v) ? Math.max(0, v) : 0;
+    };
+    const regra = {
+      premios: [num("rP0"), num("rP1"), num("rP2")],
+      rateio: $("rRateio").value,
+      sobra: $("rSobra").value,
+      taxaClube: num("rTaxa"),
+    };
+    const soma = regra.premios.reduce((a, b) => a + b, 0);
+    if (soma <= 0) { msg("msgRegra", "Os percentuais não podem ser todos zero.", "err"); return; }
+    c.regra = regra;
+    if (virarPadrao) DADOS.regraPadrao = Object.assign({}, regra);
+    salvar();
+    msg(
+      "msgRegra",
+      `✅ Ajustes salvos${virarPadrao ? " e adotados como padrão para novas competições" : ""}.` +
+        (Math.abs(soma - 100) > 0.001
+          ? `<br>Os percentuais somam ${soma}% — o bolo é dividido nessa proporção mesmo assim.`
+          : ""),
+      "ok"
+    );
+  }
+
+  /* ══════════════════════════════ AÇÕES ═════════════════════════════ */
+
+  function addAposta(e) {
+    e.preventDefault();
+    const c = compAtual() || novaCompeticao();
+    const atirador = C.norm($("fAtirador").value);
+    const apostador = C.norm($("fApostador").value);
+    const valorC = C.parseValor($("fValor").value);
+
+    if (!atirador || !apostador) { msg("msgAposta", "Preencha o atirador e o apostador.", "err"); return; }
+    if (valorC <= 0) { msg("msgAposta", "Informe um valor maior que zero.", "err"); return; }
+
+    c.apostas.push({
+      id: uid("a"),
+      atirador,
+      apostador,
+      valor: C.reais(valorC),
+      pago: $("fPago").checked,
+      pagoAuto: false,
+      em: hoje(),
+    });
+    salvar();
+    msg("msgAposta", `✅ ${esc(apostador)} → ${esc(atirador)} · ${esc(fmt(valorC))}`, "ok");
+
+    // deixa o atirador para lançar várias apostas seguidas nele
+    $("fApostador").value = "";
+    $("fValor").value = "";
+    $("fPago").checked = false;
+    $("fPagoWrap").classList.remove("on");
+    $("fApostador").focus();
+  }
+
+  function acertar(chaveApostador) {
+    const c = compAtual();
+    if (!c) return;
+    const conta = C.calcular(c);
+    const p = conta.apostadores.find((x) => x.chave === chaveApostador);
+    if (!p) return;
+    const texto =
+      p.saldoC > 0
+        ? `Confirmar: o clube paga ${fmt(p.saldoC)} para ${p.nome}?`
+        : p.saldoC < 0
+        ? `Confirmar: ${p.nome} paga ${fmt(-p.saldoC)} ao clube?`
+        : `${p.nome} está quite. Marcar como acertado?`;
+    if (!confirm(texto)) return;
+
+    // as apostas em aberto dela entram no acerto e viram pagas
+    c.apostas.forEach((a) => {
+      if (C.chave(a.apostador) === chaveApostador && !a.pago) { a.pago = true; a.pagoAuto = true; }
+    });
+    c.acertos = c.acertos || {};
+    c.acertos[chaveApostador] = { em: hoje(), saldo: C.reais(p.saldoC) };
+    salvar();
+  }
+
+  function desacertar(chaveApostador) {
+    const c = compAtual();
+    if (!c) return;
+    c.apostas.forEach((a) => {
+      if (C.chave(a.apostador) === chaveApostador && a.pagoAuto) { a.pago = false; a.pagoAuto = false; }
+    });
+    if (c.acertos) delete c.acertos[chaveApostador];
+    salvar();
+  }
+
+  function baixarArquivo(nome, conteudo, tipo) {
+    const blob = new Blob([conteudo], { type: tipo || "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportarCSV() {
+    const c = compAtual();
+    if (!c) return;
+    const conta = C.calcular(c);
+    const cab = ["Atirador", "Apostador", "Valor", "Pago", "Premio", "Saldo do apostador"];
+    const dec = (v) => (v / 100).toFixed(2).replace(".", ",");
+    const linhas = conta.apostas.map((a) => {
+      const p = conta.apostadores.find((x) => x.chave === C.chave(a.apostador));
+      return [a.atirador, a.apostador, dec(a.valorC), a.pago ? "sim" : "nao", dec(a.premioC), dec(p ? p.saldoC : 0)];
+    });
+    const csv = [cab, ...linhas]
+      .map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(";"))
+      .join("\r\n");
+    baixarArquivo(`apostas-${(c.nome || "competicao").replace(/\W+/g, "-").toLowerCase()}.csv`, "﻿" + csv, "text/csv;charset=utf-8");
+  }
+
+  /* ─────────────────────────── publicação ───────────────────────────── */
+
+  function configPub() {
+    try { return JSON.parse(localStorage.getItem(CHAVE_PUB) || "{}"); } catch (e) { return {}; }
+  }
+
+  async function publicar() {
+    const url = $("admUrl").value.trim();
+    const senha = $("admSenha").value.trim();
+    if (!url) { msg("msgAdmin", "Informe o endereço do publicador (Worker).", "err"); return; }
+    if (!senha) { msg("msgAdmin", "Informe a senha do organizador.", "err"); return; }
+    try {
+      if ($("admLembrar").checked) localStorage.setItem(CHAVE_PUB, JSON.stringify({ url, senha }));
+      else localStorage.removeItem(CHAVE_PUB);
+    } catch (e) { /* ignora */ }
+
+    msg("msgAdmin", "Publicando…", "info");
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: senha, dados: DADOS }),
+      });
+      let out = {};
+      try { out = await r.json(); } catch (e) { /* resposta sem json */ }
+      if (!r.ok || !out.ok) throw new Error(out.error || `HTTP ${r.status}`);
+      msg("msgAdmin", "✅ Publicado! Em 1 a 2 minutos o site mostra os números novos para todos.", "ok");
+    } catch (err) {
+      msg("msgAdmin", "Falha ao publicar: " + esc(err.message), "err");
+    }
+  }
+
+  async function trazerPublicado() {
+    msg("msgAdmin", "Buscando…", "info");
+    try {
+      const r = await fetch(CAMINHO_DADOS + "?t=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) throw new Error("nada publicado ainda (HTTP " + r.status + ")");
+      const d = normalizar(await r.json());
+      if (!d.competicoes.length) throw new Error("o arquivo publicado está vazio");
+      if (
+        !confirm(
+          `Trazer ${d.competicoes.length} competição(ões) publicada(s)?\n\n` +
+            `Isso SUBSTITUI o que está neste aparelho. Faça um backup antes se tiver algo só aqui.`
+        )
+      ) { msg("msgAdmin", "", ""); return; }
+      DADOS = d;
+      compId = null;
+      salvar();
+      msg("msgAdmin", "✅ Dados publicados carregados.", "ok");
+    } catch (err) {
+      msg("msgAdmin", "Não consegui trazer: " + esc(err.message), "err");
+    }
+  }
+
+  /* ══════════════════════════════ EVENTOS ═══════════════════════════ */
+
+  function ligarEventos() {
+    // abas
+    document.querySelectorAll("#tabs .tab, .docbtn[data-view]").forEach((b) => {
+      b.onclick = () => { view = b.dataset.view; render(); };
+    });
+
+    // competição
+    $("compSel").onchange = (e) => { compId = e.target.value; filtroAtirador = null; render(); };
+    $("btnNova").onclick = () => abrirModalComp(null);
+    $("btnEditar").onclick = () => { if (compAtual()) abrirModalComp(compAtual()); };
+    $("btnExcluir").onclick = () => {
+      const c = compAtual();
+      if (!c) return;
+      if (!confirm(`Excluir "${c.nome}" e todas as apostas dela? Não dá para desfazer.`)) return;
+      DADOS.competicoes = comps().filter((x) => x.id !== c.id);
+      compId = null;
+      salvar();
+    };
+    $("btnSalvarComp").onclick = salvarModalComp;
+
+    // apostas
+    $("formAposta").onsubmit = addAposta;
+    $("fPago").onchange = (e) => $("fPagoWrap").classList.toggle("on", e.target.checked);
+    $("btnPagarTodos").onclick = () => {
+      const c = compAtual();
+      if (!c) return;
+      const abertas = c.apostas.filter((a) => !a.pago).length;
+      if (!abertas) { alert("Todas as apostas já estão pagas."); return; }
+      if (!confirm(`Marcar ${abertas} aposta(s) como pagas?`)) return;
+      c.apostas.forEach((a) => { if (!a.pago) { a.pago = true; a.pagoAuto = false; } });
+      salvar();
+    };
+    $("btnCSV").onclick = exportarCSV;
+
+    // resultado
+    [0, 1, 2].forEach((i) => { $("fPodio" + i).onchange = salvarPodio; });
+    $("btnSalvarPodio").onclick = salvarPodio;
+    $("btnLimparPodio").onclick = () => {
+      const c = compAtual();
+      if (!c) return;
+      c.resultado = ["", "", ""];
+      salvar();
+    };
+
+    // acerto
+    $("btnImprimir").onclick = () => window.print();
+    $("btnCopiar").onclick = async () => {
+      const txt = resumoTexto();
+      try {
+        await navigator.clipboard.writeText(txt);
+        alert("Resumo copiado! É só colar no WhatsApp.");
+      } catch (e) {
+        prompt("Copie o resumo abaixo:", txt);
+      }
+    };
+
+    // admin
+    $("btnAdmin").onclick = () => {
+      const cfg = configPub();
+      $("admUrl").value = cfg.url || "";
+      $("admSenha").value = cfg.senha || "";
+      $("admLembrar").checked = !!cfg.url;
+      msg("msgAdmin", "", "");
+      $("modalAdmin").hidden = false;
+    };
+    $("btnBaixar").onclick = () =>
+      baixarArquivo(`the-shooting-pool-${hoje()}.json`, JSON.stringify(DADOS, null, 2));
+    $("btnRestaurar").onclick = () => $("fileRestaurar").click();
+    $("fileRestaurar").onchange = async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      try {
+        const d = normalizar(JSON.parse(await f.text()));
+        if (!confirm(`Restaurar ${d.competicoes.length} competição(ões)? Isso substitui o que está aqui.`)) return;
+        DADOS = d;
+        compId = null;
+        salvar();
+        msg("msgAdmin", "✅ Backup restaurado.", "ok");
+      } catch (err) {
+        msg("msgAdmin", "Arquivo inválido: " + esc(err.message), "err");
+      }
+      e.target.value = "";
+    };
+    $("btnPublicar").onclick = publicar;
+    $("btnBaixarRemoto").onclick = trazerPublicado;
+    $("btnApagar").onclick = () => {
+      if (!confirm("Apagar TODAS as competições deste aparelho? Baixe um backup antes.")) return;
+      if (!confirm("Tem certeza mesmo? Não dá para desfazer.")) return;
+      DADOS = { versao: 1, atualizado_em: null, regraPadrao: DADOS.regraPadrao, competicoes: [] };
+      compId = null;
+      try { localStorage.removeItem(CHAVE_LOCAL); } catch (e) { /* ignora */ }
+      novaCompeticao();
+      salvar();
+      msg("msgAdmin", "Tudo apagado.", "ok");
+    };
+
+    // fechar modais
+    document.querySelectorAll("[data-fechar]").forEach((b) => {
+      b.onclick = () => { $(b.dataset.fechar).hidden = true; };
+    });
+    document.querySelectorAll(".overlay").forEach((o) => {
+      o.addEventListener("click", (e) => { if (e.target === o) o.hidden = true; });
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") document.querySelectorAll(".overlay").forEach((o) => (o.hidden = true));
+    });
+
+    // cliques nas tabelas e chips (delegação)
+    document.addEventListener("click", (e) => {
+      const chip = e.target.closest("[data-filtro]");
+      if (chip) {
+        filtroAtirador = chip.dataset.filtro || null;
+        render();
+        return;
+      }
+      const btn = e.target.closest("[data-act]");
+      if (!btn) return;
+      const c = compAtual();
+      const act = btn.dataset.act;
+
+      if (act === "pago" && c) {
+        const a = c.apostas.find((x) => x.id === btn.dataset.id);
+        if (a) { a.pago = !a.pago; a.pagoAuto = false; salvar(); }
+      } else if (act === "excluir" && c) {
+        const a = c.apostas.find((x) => x.id === btn.dataset.id);
+        if (a && confirm(`Excluir a aposta de ${a.apostador} em ${a.atirador} (${fmt(C.cent(a.valor))})?`)) {
+          c.apostas = c.apostas.filter((x) => x.id !== a.id);
+          salvar();
+        }
+      } else if (act === "acertar") {
+        acertar(btn.dataset.chave);
+      } else if (act === "desacertar") {
+        desacertar(btn.dataset.chave);
+      } else if (act === "abrir") {
+        e.preventDefault();
+        compId = btn.dataset.id;
+        view = "apostas";
+        render();
+      }
+    });
+  }
+
+  function salvarPodio() {
+    const c = compAtual();
+    if (!c) return;
+    c.resultado = [0, 1, 2].map((i) => C.norm($("fPodio" + i).value));
+    salvar();
+  }
+
+  function abrirModalComp(c) {
+    $("tituloComp").textContent = c ? "Editar competição" : "Nova competição";
+    $("cNome").value = c ? c.nome : "";
+    $("cData").value = c ? c.data || hoje() : hoje();
+    $("modalComp").dataset.editando = c ? c.id : "";
+    msg("msgComp", "", "");
+    $("modalComp").hidden = false;
+    setTimeout(() => $("cNome").focus(), 50);
+  }
+
+  function salvarModalComp() {
+    const editando = $("modalComp").dataset.editando;
+    const nome = C.norm($("cNome").value);
+    const data = $("cData").value;
+    if (editando) {
+      const c = comps().find((x) => x.id === editando);
+      if (c) { c.nome = nome || c.nome; c.data = data; }
+    } else {
+      novaCompeticao(nome, data);
+      view = "apostas";
+      filtroAtirador = null;
+    }
+    $("modalComp").hidden = true;
+    salvar();
+  }
+
+  /* ═══════════════════════════════ BOOT ═════════════════════════════ */
+
+  async function boot() {
+    ligarEventos();
+    const tinhaLocal = carregar();
+
+    if (!tinhaLocal) {
+      // primeira visita: tenta o que o clube publicou
+      try {
+        const r = await fetch(CAMINHO_DADOS + "?t=" + Date.now(), { cache: "no-store" });
+        if (r.ok) {
+          const d = normalizar(await r.json());
+          if (d.competicoes.length) DADOS = d;
+        }
+      } catch (e) { /* sem arquivo publicado: segue local */ }
+    }
+    if (!comps().length) novaCompeticao();
+    compId = comps()[comps().length - 1].id;
+    render();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
