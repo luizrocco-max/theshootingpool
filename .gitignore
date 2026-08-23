@@ -141,3 +141,17 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# backups baixados pelo painel e planilhas locais
+the-shooting-pool-*.json
+apostas-*.csv
+*.xlsx
+*.xls
+~$*
+
+# sistema operacional / editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
