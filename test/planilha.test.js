@@ -341,9 +341,13 @@ test("a exportação traz as abas de conferência", () => {
   ]);
 
   const acerto = abas.Acerto;
-  assert.equal(acerto[1][1], "Ana");
-  assert.equal(acerto[1][5], 0); // ganhou 100, devia 100 → saldo zero
-  assert.equal(acerto[1][6], "quite");
+  const col = (nome) => acerto[0].indexOf(nome);
+  assert.equal(acerto[1][col("APOSTADOR")], "Ana");
+  assert.equal(acerto[1][col("SALDO")], 0); // ganhou 100, devia 100 → saldo zero
+  assert.equal(acerto[1][col("SITUACAO")], "quite");
+  assert.equal(acerto[1][col("PAGOU")], 0, "não pagou o lance");
+  assert.equal(acerto[1][col("DEVE")], 100);
+  assert.equal(acerto[1][col("ADIANTOU")], 0);
 
   const temporada = abas.Temporada;
   assert.equal(temporada[1][0], "Ana");
@@ -517,4 +521,43 @@ test("o modelo ensina a escrever que o sócio bancou o lance", () => {
   assert.ok(rachado, "o modelo deveria trazer um lance rachado de exemplo");
   assert.equal(rachado.pago, true, "no exemplo, quem bancou quita o lance");
   assert.equal(rachado.participacoes[0].pagoC, rachado.valorC);
+});
+
+test("a aba Acerto mostra quem bancou a parte do sócio", () => {
+  const abas = P.exportar({
+    competicoes: [
+      {
+        id: "c1",
+        nome: "Etapa",
+        regra: { premios: [100] },
+        resultado: ["Zé"],
+        apostas: [
+          {
+            id: "a1",
+            atirador: "Zé",
+            apostador: "OFC",
+            valor: 300,
+            socios: [
+              { nome: "OFC", cota: 1, pagou: 300 },
+              { nome: "Luiz Rocco", cota: 1, pagou: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const cab = abas.Acerto[0];
+  const col = (nome) => cab.indexOf(nome);
+  const linha = (nome) => abas.Acerto.find((l) => l[col("APOSTADOR")] === nome);
+
+  const ofc = linha("OFC");
+  assert.equal(ofc[col("APOSTOU")], 150, "a cota do OFC é metade do lance");
+  assert.equal(ofc[col("PAGOU")], 300, "mas ele pôs o lance inteiro");
+  assert.equal(ofc[col("ADIANTOU")], 150, "os 150 que ele bancou pelo sócio");
+  assert.equal(ofc[col("DEVE")], 0);
+
+  const rocco = linha("Luiz Rocco");
+  assert.equal(rocco[col("PAGOU")], 0, "o Rocco não pôs nada");
+  assert.equal(rocco[col("DEVE")], 150);
+  assert.equal(rocco[col("ADIANTOU")], 0);
 });

@@ -71,7 +71,11 @@
         nome: C.norm(c.nome) || "Competição",
         data: c.data || "",
         regra: c.regra || null,
-        resultado: Array.isArray(c.resultado) ? c.resultado.slice(0, 3) : ["", "", ""],
+        // o pódio vai até MAX_COLOCACOES, não até o 3º: cortar em 3 aqui
+        // apagava do 4º lugar em diante toda vez que a página era recarregada
+        resultado: Array.isArray(c.resultado)
+          ? c.resultado.slice(0, C.MAX_COLOCACOES)
+          : ["", "", ""],
         acertos: c.acertos || {},
         apostas: ((c.apostas) || []).map((a) => ({
           id: a.id || uid("a"),
@@ -522,7 +526,10 @@
           p.devendoC
             ? esc(fmt(p.devendoC))
             : p.adiantadoC
-            ? `<span class="money pos" title="bancou a parte de um sócio">−${esc(fmt(p.adiantadoC))}</span>`
+            ? // no papel e no celular o title não existe: o "bancou" tem que
+              // estar na tela, senão sobra um número negativo sem explicação
+              `<span class="money pos">−${esc(fmt(p.adiantadoC))}</span>` +
+              ` <span class="tag mut">bancou</span>`
             : "—"
         }</td>
         <td class="num">${p.premioC ? esc(fmt(p.premioC)) : "—"}</td>
@@ -955,11 +962,15 @@
     const c = compAtual();
     if (!c) return;
     const conta = C.calcular(c);
-    const cab = ["Atirador", "Apostador", "Valor", "Pago", "Premio", "Saldo do apostador"];
+    const cab = ["Atirador", "Apostador", "Valor", "Pago", "Premio", "Saldo do apostador", "Socios"];
     const dec = (v) => (v / 100).toFixed(2).replace(".", ",");
     const linhas = conta.apostas.map((a) => {
       const p = conta.apostadores.find((x) => x.chave === C.chave(a.apostador));
-      return [a.atirador, a.apostador, dec(a.valorC), a.pago ? "sim" : "nao", dec(a.premioC), dec(p ? p.saldoC : 0)];
+      // sem esta coluna o sócio que não bancou sumia do CSV inteiro
+      const socios = a.temSocios
+        ? a.participacoes.map((s) => `${s.nome}: cota ${dec(s.cotaC)}, pos ${dec(s.pagoC)}`).join(" | ")
+        : "";
+      return [a.atirador, a.apostador, dec(a.valorC), a.pago ? "sim" : "nao", dec(a.premioC), dec(p ? p.saldoC : 0), socios];
     });
     const csv = [cab, ...linhas]
       .map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(";"))
