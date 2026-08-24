@@ -380,3 +380,141 @@ test("gera e lê um .xlsx de verdade", () => {
   assert.deepEqual(r.competicoes[0].regra.premios, [50, 30, 20]);
   assert.equal(C.calcular(r.competicoes[0]).pote, 110000);
 });
+
+/* ════════ quem bancou o lance e quem leva o prêmio ═══════════════════ */
+
+test('"bancou tudo" na coluna PAGOU vale o lance inteiro, não a cota', () => {
+  const abas = {
+    Apostas: [
+      ["COMPETICAO", "DATA", "ATIRADOR", "APOSTADOR", "VALOR", "PAGO"],
+      ["Etapa", "24/08/2026", "Zé", "OFC", 300, "sim"],
+    ],
+    Socios: [
+      ["COMPETICAO", "ATIRADOR", "SOCIO", "COTA", "PAGOU", "QUEM LEVA"],
+      ["Etapa", "Zé", "OFC", 1, "bancou tudo", ""],
+      ["", "", "Luiz Rocco", 1, "não", ""],
+    ],
+    Resultado: [["COMPETICAO", "COLOCACAO", "ATIRADOR", "PERCENTUAL"], ["Etapa", 1, "Zé", 100]],
+  };
+  const conta = C.calcular(P.importar(abas).competicoes[0]);
+  const partes = conta.apostas[0].participacoes;
+  assert.equal(partes[0].pagoC, 30000, "quem bancou tudo tem de constar com o lance inteiro");
+  assert.equal(partes[0].cotaC, 15000, "mas a cota dele continua sendo a metade");
+  assert.equal(partes[1].pagoC, 0);
+  assert.equal(conta.apostas[0].pago, true, "o lance está quitado com o clube");
+});
+
+test('"sim" na coluna PAGOU continua sendo só a própria cota', () => {
+  const abas = {
+    Apostas: [
+      ["COMPETICAO", "DATA", "ATIRADOR", "APOSTADOR", "VALOR", "PAGO"],
+      ["Etapa", "24/08/2026", "Zé", "OFC", 300, "sim"],
+    ],
+    Socios: [
+      ["COMPETICAO", "ATIRADOR", "SOCIO", "COTA", "PAGOU", "QUEM LEVA"],
+      ["Etapa", "Zé", "OFC", 1, "sim", ""],
+      ["", "", "Luiz Rocco", 1, "não", ""],
+    ],
+  };
+  const conta = C.calcular(P.importar(abas).competicoes[0]);
+  assert.equal(conta.apostas[0].participacoes[0].pagoC, 15000);
+  assert.equal(conta.apostas[0].pago, false, "metade paga não quita o lance");
+});
+
+test("o sócio escolhido para levar o prêmio sobrevive à ida e volta", () => {
+  const comp = {
+    id: "c1",
+    nome: "Etapa",
+    data: "2026-08-24",
+    regra: { premios: [100] },
+    resultado: ["Zé"],
+    acertos: {},
+    apostas: [
+      {
+        id: "a1",
+        atirador: "Zé",
+        apostador: "OFC",
+        valor: 300,
+        recebedor: "OFC",
+        socios: [
+          { nome: "OFC", cota: 1, pagou: 300 },
+          { nome: "Luiz Rocco", cota: 1, pagou: 0 },
+        ],
+      },
+    ],
+  };
+  const antes = C.calcular(comp);
+  const volta = P.importar(P.exportar({ competicoes: [comp] }));
+  const depois = C.calcular(volta.competicoes[0]);
+
+  assert.equal(volta.competicoes[0].apostas[0].recebedor, "OFC");
+  const premio = (conta, nome) =>
+    conta.apostadores.find((p) => C.chave(p.nome) === C.chave(nome)).premioC;
+  assert.equal(premio(antes, "OFC"), 30000);
+  assert.equal(premio(depois, "OFC"), 30000, "o prêmio voltou rachado em vez de inteiro");
+  assert.equal(premio(depois, "Luiz Rocco"), 0);
+});
+
+test('o modo "pagador" continua indo e voltando pela mesma coluna', () => {
+  const comp = {
+    id: "c1",
+    nome: "Etapa",
+    regra: { premios: [100] },
+    resultado: ["Zé"],
+    acertos: {},
+    apostas: [
+      {
+        id: "a1",
+        atirador: "Zé",
+        apostador: "OFC",
+        valor: 300,
+        premio: "pagador",
+        socios: [
+          { nome: "OFC", cota: 1, pagou: 300 },
+          { nome: "Luiz Rocco", cota: 1, pagou: 0 },
+        ],
+      },
+    ],
+  };
+  const volta = P.importar(P.exportar({ competicoes: [comp] }));
+  assert.equal(volta.competicoes[0].apostas[0].premio, "pagador");
+  assert.ok(!volta.competicoes[0].apostas[0].recebedor, 'o modo não pode virar nome de sócio');
+});
+
+test("nome desconhecido em QUEM LEVA avisa em vez de sumir calado", () => {
+  const abas = {
+    Apostas: [
+      ["COMPETICAO", "DATA", "ATIRADOR", "APOSTADOR", "VALOR", "PAGO"],
+      ["Etapa", "24/08/2026", "Zé", "OFC", 300, "sim"],
+    ],
+    Socios: [
+      ["COMPETICAO", "ATIRADOR", "SOCIO", "COTA", "PAGOU", "QUEM LEVA"],
+      ["Etapa", "Zé", "OFC", 1, 300, "Fulano"],
+      ["", "", "Luiz Rocco", 1, 0, ""],
+    ],
+  };
+  const r = P.importar(abas);
+  assert.ok(!r.competicoes[0].apostas[0].recebedor, "não podia aceitar um nome de fora");
+  assert.ok(
+    r.avisos.some((a) => a.includes("Fulano")),
+    "faltou avisar sobre o nome desconhecido: " + JSON.stringify(r.avisos)
+  );
+});
+
+test("o modelo ensina a escrever que o sócio bancou o lance", () => {
+  const m = P.modelo();
+  const instrucoes = m["Instruções"].map((l) => l.join(" ")).join("\n");
+  assert.ok(instrucoes.includes("bancou tudo"), "as instruções não citam bancou tudo");
+  // e o exemplo da aba Socios usa a forma que as instruções ensinam
+  const exemplo = m.Socios.find((l) => String(l[4]).includes("bancou"));
+  assert.ok(exemplo, "o exemplo de sócios não mostra o bancou tudo");
+
+  // e o exemplo do modelo tem que importar sem aviso e fechar a conta
+  const r = P.importar(m);
+  assert.deepEqual(r.avisos, [], "o próprio modelo gera aviso na importação");
+  const conta = C.calcular(r.competicoes[0]);
+  const rachado = conta.apostas.find((a) => a.temSocios);
+  assert.ok(rachado, "o modelo deveria trazer um lance rachado de exemplo");
+  assert.equal(rachado.pago, true, "no exemplo, quem bancou quita o lance");
+  assert.equal(rachado.participacoes[0].pagoC, rachado.valorC);
+});
