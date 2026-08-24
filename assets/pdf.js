@@ -75,8 +75,51 @@
   // Courier: todo caractere ocupa 0,6 em. É o que garante o alinhamento exato.
   const larguraMono = (txt, tam) => winansi(txt).length * tam * 0.6;
 
-  // Helvetica varia por caractere; esta média serve só para cortar texto longo.
-  const larguraAprox = (txt, tam) => winansi(txt).length * tam * 0.5;
+  // Helvetica varia por caractere. Estas são as larguras do próprio formato,
+  // em milésimos de em; letra acentuada ocupa o mesmo que a letra sem acento.
+  const HELV = {};
+  (function () {
+    const por = (largura, caracteres) => {
+      for (const ch of caracteres) HELV[ch] = largura;
+    };
+    por(278, " !,.:;/[]|it");
+    por(191, "'");
+    por(355, '"');
+    por(556, "#$0123456789?_abdeghnopqsu");
+    por(889, "%");
+    por(667, "&ABEKRSXY");
+    por(333, "()-`rk{}");
+    por(389, "*");
+    por(584, "+<=>~");
+    por(1015, "@");
+    por(722, "CDHNOQRUwZ");
+    por(778, "GO");
+    por(611, "FTZ");
+    por(500, "JcksvxyzL");
+    por(833, "Mm");
+    por(944, "W");
+    por(222, "jl");
+    por(469, "^");
+    por(260, "|");
+    // ajustes onde a lista acima se sobrepôs
+    Object.assign(HELV, {
+      L: 556, R: 722, S: 667, Z: 611, O: 778, w: 722, k: 500, r: 333,
+      G: 778, C: 722, D: 722, U: 722, T: 611, F: 611, J: 500,
+    });
+  })();
+
+  /** Largura real de um texto em Helvetica, em pontos. */
+  function larguraHelv(txt, tam, forte) {
+    let mil = 0;
+    for (const ch of winansi(txt)) {
+      const base = HELV[ch];
+      mil += base === undefined ? 556 : base;
+    }
+    // o negrito é um pouco mais largo que o normal
+    return (mil / 1000) * tam * (forte ? 1.07 : 1);
+  }
+
+  const larguraAprox = (txt, tam) => larguraHelv(txt, tam, false);
 
   /** Corta o texto com reticências para caber na largura dada. */
   function caber(txt, tam, largura, mono) {
@@ -137,6 +180,15 @@
       );
     }
 
+    /** Quadradinho vazio, para ir marcando o que já foi pago. */
+    function caixaVazia(x, yTopo, lado) {
+      pagina.push(
+        `${corTraco([0.55, 0.58, 0.54])}`,
+        "0.8 w",
+        `${x.toFixed(2)} ${(yTopo - lado).toFixed(2)} ${lado} ${lado} re S`
+      );
+    }
+
     function linhaHorizontal(x1, x2, yy, c, espessura) {
       pagina.push(
         `${corTraco(c || [0.85, 0.85, 0.82])}`,
@@ -177,10 +229,35 @@
         return api;
       },
 
+      /** Quebra o texto em linhas que cabem na página, sem cortar palavra. */
       paragrafo(txt, estilo) {
-        garantir(16);
-        texto(txt, MARGEM, (estilo && estilo.tam) || 9.5, estilo);
-        y -= (estilo && estilo.altura) || 14;
+        const e = estilo || {};
+        const tam = e.tam || 9.5;
+        const forte = e.fonte === "forte" || e.fonte === "monoForte";
+        const disponivel = A4.largura - 2 * MARGEM;
+        const alturaLinha = e.altura || tam * 1.45;
+
+        const palavras = String(txt == null ? "" : txt).split(/\s+/).filter(Boolean);
+        const linhas = [];
+        let atual = "";
+        palavras.forEach((palavra) => {
+          const tentativa = atual ? atual + " " + palavra : palavra;
+          if (atual && larguraHelv(tentativa, tam, forte) > disponivel) {
+            linhas.push(atual);
+            atual = palavra;
+          } else {
+            atual = tentativa;
+          }
+        });
+        if (atual) linhas.push(atual);
+        if (!linhas.length) linhas.push("");
+
+        linhas.forEach((linha) => {
+          garantir(alturaLinha + 4);
+          texto(linha, MARGEM, tam, e);
+          y -= alturaLinha;
+        });
+        y -= 4;
         return api;
       },
 
@@ -241,6 +318,11 @@
 
           let x = MARGEM;
           colunas.forEach((col, i) => {
+            if (col.caixa) {
+              caixaVazia(x + 6, topo - 4, 9);
+              x += col.largura;
+              return;
+            }
             const valor = linha[i] == null ? "" : String(linha[i]);
             y = topo - 12;
             const estilo = {
@@ -349,6 +431,58 @@
 
   const fmt = (c) => C.fmt(c).replace("R$ ", "").replace("-R$ ", "-");
 
+  const dataBR = (iso) => {
+    if (!iso) return "";
+    const p = String(iso).split("-");
+    return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : String(iso);
+  };
+
+  /**
+   * A lista de "quem paga quem", com quadradinho para ir marcando.
+   * É a seção que serve de roteiro na hora de acertar as contas.
+   */
+  function secaoPagamentos(doc, acerto, larg, opcoes) {
+    const o = opcoes || {};
+    const lista = (acerto && acerto.pagamentos) || [];
+    doc.titulo(`Pagamentos${lista.length ? " — " + lista.length + " no total" : ""}`);
+
+    if (!lista.length) {
+      doc.paragrafo("Ninguém tem nada a pagar nem a receber. Tudo quite.", {
+        cor: [0.21, 0.55, 0.31],
+        fonte: "forte",
+      });
+      doc.espaco(6);
+      return;
+    }
+
+    const colValor = 96;
+    doc.tabela({
+      colunas: [
+        { titulo: "", largura: 22, caixa: true },
+        { titulo: "Quem paga", largura: (larg - 22 - colValor) / 2 },
+        { titulo: "Para quem", largura: (larg - 22 - colValor) / 2 },
+        { titulo: "Valor R$", largura: colValor, dir: true },
+      ],
+      linhas: lista.map((p) => ["", p.de, p.para, fmt(p.valorC)]),
+      destaques: lista.map(() => true),
+    });
+
+    const total = lista.reduce((s, p) => s + p.valorC, 0);
+    doc.paragrafo(
+      `Total movimentado: R$ ${fmt(total)} em ${lista.length} pagamento(s)` +
+        (o.avulsos && o.avulsos > lista.length
+          ? `, no lugar de ${o.avulsos} acertos avulsos.`
+          : "."),
+      { fonte: "forte", tam: 10 }
+    );
+    doc.paragrafo(
+      'Esta lista quita todo mundo no menor número de transferências: quem deve paga direto ' +
+        'quem tem a receber. "Caixa do clube" é o dinheiro das apostas já pagas, que está com o ' +
+        "organizador.",
+      { cor: [0.42, 0.45, 0.4], tam: 8.5 }
+    );
+  }
+
   /**
    * Relatório de uma competição: ganhadores, valores e acerto de contas.
    * @param {Object} comp competição
@@ -360,12 +494,6 @@
     const conta = C.calcular(comp);
     const regra = conta.regra;
     const larg = A4.largura - 2 * MARGEM;
-
-    const dataBR = (iso) => {
-      if (!iso) return "";
-      const p = String(iso).split("-");
-      return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : String(iso);
-    };
 
     const doc = criar({
       titulo: `${comp.nome || "Competição"} — apostas`,
@@ -485,6 +613,10 @@
       { cor: [0.42, 0.45, 0.4], tam: 8.5 }
     );
 
+    /* ── quem paga quem ───────────────────────────────────────────────── */
+    doc.espaco(10);
+    secaoPagamentos(doc, conta.acerto, larg);
+
     /* ── todas as apostas ─────────────────────────────────────────────── */
     if (o.apostas !== false && conta.apostas.length) {
       doc.espaco(10);
@@ -512,5 +644,154 @@
     return doc.bytes();
   }
 
-  return { criar, relatorio, winansi, larguraMono, A4, MARGEM };
+  /* ═════════════ acerto geral: todas as competições juntas ═══════════ */
+
+  /**
+   * O relatório que serve de roteiro de pagamento do clube: junta o que está
+   * em aberto em todas as competições, compensa quem deve numa e tem a
+   * receber noutra, e fecha na menor lista de pagamentos possível.
+   *
+   * @param {Object} dados o arquivo inteiro do painel
+   * @param {{geradoEm?:string, clube?:string}} opcoes
+   * @returns {Uint8Array}
+   */
+  function relatorioGeral(dados, opcoes) {
+    const o = opcoes || {};
+    const t = C.temporada(dados || { competicoes: [] });
+    const larg = A4.largura - 2 * MARGEM;
+
+    const doc = criar({
+      titulo: "Acerto geral do clube",
+      autor: "The Shooting Pool",
+      rodape: `Acerto geral${o.geradoEm ? "   |   Gerado em " + o.geradoEm : ""}`,
+    });
+
+    const emAberto = t.comps.filter((c) =>
+      c.conta.apostadores.some((p) => !p.acertado && p.saldoC !== 0)
+    );
+
+    doc.capa(
+      "Acerto geral do clube",
+      o.clube ? o.clube : `${t.totais.competicoes} competição(ões) na temporada`
+    );
+
+    const aPagar = t.pendencias.filter((p) => p.saldoC > 0).reduce((s, p) => s + p.saldoC, 0);
+    const aReceber = t.pendencias.filter((p) => p.saldoC < 0).reduce((s, p) => s - p.saldoC, 0);
+    doc.cartoes([
+      { rotulo: "A pagar", valor: "R$ " + fmt(aPagar) },
+      { rotulo: "A receber", valor: "R$ " + fmt(aReceber) },
+      { rotulo: "Pessoas envolvidas", valor: String(t.pendencias.length) },
+      { rotulo: "Pagamentos", valor: String(t.acerto.pagamentos.length) },
+      { rotulo: "Competições", valor: String(emAberto.length) },
+    ]);
+
+    /* ── a lista de pagamentos, primeiro: é para isso que serve a folha ── */
+    // quantos acertos seriam sem juntar as competições: um por pessoa, em cada uma
+    const avulsos = emAberto.reduce(
+      (s, c) => s + c.conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0).length,
+      0
+    );
+    secaoPagamentos(doc, t.acerto, larg, { avulsos });
+
+    /* ── posição de cada um ───────────────────────────────────────────── */
+    if (t.pendencias.length) {
+      doc.espaco(8);
+      doc.titulo("Posição de cada um");
+
+      const linhas = [];
+      const destaques = [];
+      t.pendencias.forEach((p) => {
+        linhas.push([
+          p.nome,
+          p.saldoC > 0 ? "tem a receber" : "deve",
+          fmt(p.saldoC),
+          p.emAberto.length === 1 ? "1 competição" : p.emAberto.length + " competições",
+        ]);
+        destaques.push(true);
+        // de onde vem o saldo, quando não é de uma competição só
+        if (p.emAberto.length > 1)
+          p.emAberto.forEach((e) => {
+            linhas.push(["", e.competicao + (e.data ? "  " + dataBR(e.data) : ""), fmt(e.saldoC), ""]);
+            destaques.push(false);
+          });
+      });
+
+      doc.tabela({
+        colunas: [
+          { titulo: "Apostador", largura: larg * 0.26 },
+          { titulo: "Situação", largura: larg * 0.34 },
+          { titulo: "Saldo R$", largura: 100, dir: true },
+          { titulo: "Origem", largura: larg - larg * 0.26 - larg * 0.34 - 100 },
+        ],
+        linhas,
+        destaques,
+      });
+      doc.paragrafo(
+        "Saldo positivo: o clube (ou outro apostador) paga a essa pessoa. Negativo: ela paga. " +
+          "Quem ficou devendo numa competição e ganhou em outra já entra aqui com a diferença.",
+        { cor: [0.42, 0.45, 0.4], tam: 8.5 }
+      );
+    }
+
+    /* ── competições com pendência ────────────────────────────────────── */
+    if (emAberto.length) {
+      doc.espaco(10);
+      doc.titulo("Competições em aberto");
+      doc.tabela({
+        colunas: [
+          { titulo: "Competição", largura: larg * 0.34 },
+          { titulo: "Data", largura: 74 },
+          { titulo: "Bolo R$", largura: 92, dir: true },
+          { titulo: "Em aberto R$", largura: 96, dir: true },
+          { titulo: "Pessoas", largura: larg - larg * 0.34 - 74 - 92 - 96, dir: true },
+        ],
+        linhas: emAberto.map(({ comp, conta }) => {
+          const gente = conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0);
+          const total = gente.reduce((s, p) => s + Math.abs(p.saldoC), 0);
+          return [comp.nome, dataBR(comp.data), fmt(conta.pote), fmt(total), String(gente.length)];
+        }),
+      });
+    }
+
+    /* ── a temporada inteira, para conferência ────────────────────────── */
+    if (t.apostadores.length) {
+      doc.espaco(10);
+      doc.titulo("Temporada");
+      doc.tabela({
+        colunas: [
+          { titulo: "Apostador", largura: larg * 0.3 },
+          { titulo: "Apostou R$", largura: (larg - larg * 0.3 - 78) / 3, dir: true },
+          { titulo: "Ganhou R$", largura: (larg - larg * 0.3 - 78) / 3, dir: true },
+          { titulo: "Lucro R$", largura: (larg - larg * 0.3 - 78) / 3, dir: true },
+          { titulo: "Premiadas", largura: 78, dir: true },
+        ],
+        linhas: t.apostadores.map((p) => [
+          p.nome,
+          fmt(p.apostadoC),
+          fmt(p.premioC),
+          fmt(p.lucroC),
+          `${p.premiadas}/${p.competicoes}`,
+        ]),
+      });
+      doc.paragrafo(
+        `Movimentado na temporada: R$ ${fmt(t.totais.movimentadoC)}  ·  pago em prêmios: R$ ${fmt(
+          t.totais.premiosC
+        )}  ·  ficou com o clube: R$ ${fmt(t.totais.clubeC)}`,
+        { fonte: "forte", tam: 9.5 }
+      );
+    }
+
+    return doc.bytes();
+  }
+
+  return {
+    criar,
+    relatorio,
+    relatorioGeral,
+    winansi,
+    larguraMono,
+    larguraTexto: larguraHelv,
+    A4,
+    MARGEM,
+  };
 });

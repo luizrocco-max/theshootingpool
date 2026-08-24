@@ -349,11 +349,13 @@
         pagas e o acerto sai da lista de pendências.
       </div>
     </div>
+    <div id="pagamentosComp"></div>
     <div id="caixaClube"></div>
   </section>
 
   <section id="view-temporada" hidden>
     <div id="kpisTemporada" class="kpis"></div>
+    <div id="acertoGeral"></div>
     <div id="rankApostadores"></div>
     <div id="rankAtiradores"></div>
     <div id="listaComps"></div>
@@ -404,6 +406,25 @@
         <li>Terminada a prova, informe o pódio na aba <b>Resultado</b>.</li>
         <li>Use a aba <b>Acerto de contas</b> para pagar e cobrar — e marque cada um como acertado.</li>
       </ol>
+
+      <h4>Quem paga quem</h4>
+      <p>Na aba 🤝 Acerto de contas, embaixo da tabela, o sistema monta a lista de pagamentos
+        que quita todo mundo com o <b>menor número de transferências</b>. Em vez de cada um
+        passar pelo caixa, <b>quem deve paga direto quem tem a receber</b>.</p>
+      <div class="exemplo">
+        Elza não pagou os R$ 400 da aposta dela e perdeu. Carla tem R$ 130 a receber.<br>
+        Em vez de a Elza pagar o clube e o clube pagar a Carla, <b>a Elza paga a Carla</b>.
+      </div>
+      <p>O <b>caixa do clube</b> aparece na lista quando o organizador está com dinheiro de
+        apostas já pagas — porque esse dinheiro também precisa ser distribuído.</p>
+
+      <h4>Acerto geral do clube</h4>
+      <p>Na aba 📊 Temporada, o <b>acerto geral</b> faz o mesmo, mas juntando <b>todas as
+        competições em aberto</b>. Quem ficou devendo numa etapa e ganhou em outra entra com a
+        diferença — muitas vezes um pagamento só, ou nenhum, no lugar de vários.</p>
+      <p>O botão <b>📄 Baixar PDF do acerto</b> gera a folha com essa lista, um quadradinho para
+        ir marcando o que já foi pago, a posição de cada apostador (com a origem de cada saldo) e
+        o resumo da temporada.</p>
 
       <h4>PDF dos ganhadores</h4>
       <p>O botão <b>📄 Baixar PDF</b> (nas abas 🏆 Resultado e 🤝 Acerto de contas) gera um

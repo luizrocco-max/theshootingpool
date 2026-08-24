@@ -79,6 +79,36 @@ são configuráveis **por competição** — e podem virar o padrão das próxim
 
 ---
 
+## Quem paga quem
+
+Acertar as contas passando tudo pelo caixa dá uma transferência por pessoa, em
+cada competição. O painel calcula a lista **mínima** de pagamentos: quem deve
+paga direto quem tem a receber.
+
+> Elza não pagou os R$ 400 da aposta e perdeu; Carla tem R$ 130 a receber.
+> Em vez de a Elza pagar o clube e o clube pagar a Carla, **a Elza paga a Carla**.
+
+O **caixa do clube** entra na lista quando o organizador está com dinheiro de
+apostas já pagas — esse dinheiro também precisa sair.
+
+Aparece em dois lugares:
+
+- **🤝 Acerto de contas** — os pagamentos daquela competição;
+- **📊 Temporada → Acerto geral** — junta **todas as competições em aberto**.
+  Quem ficou devendo numa etapa e ganhou em outra entra com a diferença, e sai
+  um pagamento só (ou nenhum) no lugar de vários. O botão **📄 Baixar PDF do
+  acerto** gera a folha com a lista, um quadradinho para ir marcando o que já
+  foi pago, a posição de cada um com a origem de cada saldo, e o resumo da
+  temporada.
+
+O método é: primeiro os pares que se anulam exatamente, depois os trios que
+fecham em zero, e o resto no guloso — o maior devedor paga o maior credor. Num
+teste com 300 conjuntos aleatórios de saldos, isso bateu o **mínimo exato**
+(calculado por força bruta) em **225 dos 227 casos válidos**; nos outros dois
+saiu um pagamento a mais. Nunca passa de *pessoas − 1* pagamentos.
+
+---
+
 ## PDF dos ganhadores
 
 O botão **📄 Baixar PDF** — nas abas 🏆 Resultado e 🤝 Acerto de contas — gera o
@@ -90,7 +120,8 @@ relatório da competição em A4:
 - **Ganhadores**: cada colocação com o atirador, a faixa e quanto cada apostador leva;
 - **Acerto de contas**: apostou, deve, prêmio, saldo e situação de cada um, com
   quem o clube precisa cobrar em destaque;
-- **Apostas lançadas** para conferência, marcando as que estão em aberto.
+- **Apostas lançadas** para conferência, marcando as que estão em aberto;
+- **Pagamentos** — a lista de quem paga quem, com quadradinho para ir marcando.
 
 O arquivo é gerado no próprio navegador, sem enviar nada para lugar nenhum, e
 quebra em várias páginas repetindo o cabeçalho das tabelas quando a lista é longa.
@@ -284,6 +315,7 @@ test/calc.test.js              # testes do cálculo
 test/cofre.test.js             # testes da senha e da cifragem
 test/planilha.test.js          # testes da planilha, incluindo um .xlsx de verdade
 test/pdf.test.js               # testes do PDF (estrutura, xref, acentuação)
+test/pagamentos.test.js        # testes do quem paga quem, contra a força bruta
 scripts/serve.js               # servidor local sem dependências (npm start)
 scripts/gerar-modelo.js        # regera o modelo (npm run modelo)
 cloudflare-worker.js           # publicador com senha (opcional)

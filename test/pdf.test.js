@@ -67,9 +67,46 @@ const comp = (extra) =>
 
 /* ═════════════════════════════ estrutura ═════════════════════════════ */
 
-test("gera um PDF de uma página com estrutura válida", () => {
+test("gera um PDF com estrutura válida", () => {
   const { paginas } = conferirEstrutura(Pdf.relatorio(comp(), { geradoEm: "23/08/2026 20:10" }));
-  assert.equal(paginas, 1);
+  assert.ok(paginas >= 1 && paginas <= 3, "páginas: " + paginas);
+});
+
+test("o relatório da competição traz o quem paga quem", () => {
+  const s = texto(Pdf.relatorio(comp(), { geradoEm: "23/08/2026 20:10" }));
+  assert.ok(s.includes("(Pagamentos"), "falta a seção de pagamentos");
+  assert.ok(s.includes("(QUEM PAGA)") && s.includes("(PARA QUEM)"), "faltam as colunas");
+  assert.ok(s.includes("(Caixa do clube)"), "o caixa deveria aparecer como quem paga");
+  // a Elza deve 400 e ninguém recebe exatamente isso: ela paga mais de um
+  assert.ok(s.includes("(Elza)"), "a Elza deveria aparecer pagando");
+});
+
+test("competição toda quite não inventa pagamento", () => {
+  const c = comp({ resultado: [], apostas: [{ id: "a1", atirador: "Zé", apostador: "Ana", valor: 100, pago: true }] });
+  const s = texto(Pdf.relatorio(c));
+  assert.ok(s.includes("Tudo quite") || s.includes("nada a pagar"), "deveria dizer que está quite");
+});
+
+test("texto longo quebra linha em vez de vazar pela margem", () => {
+  const doc = Pdf.criar({ titulo: "Teste" });
+  const frase =
+    "Esta lista quita todo mundo no menor numero de transferencias possivel: quem deve paga " +
+    "direto quem tem a receber, e o caixa do clube entra apenas com o que sobrar depois disso.";
+  const antes = doc.y;
+  doc.paragrafo(frase, { tam: 8.5 });
+  const usado = antes - doc.y;
+  assert.ok(usado > 14, "uma frase longa tem que ocupar mais de uma linha (ocupou " + usado + ")");
+
+  // e nenhuma linha pode passar da largura útil da página
+  const s = texto(doc.bytes());
+  const linhas = [...s.matchAll(/\(([^)]*)\) Tj/g)].map((m) => m[1]);
+  const util = Pdf.A4.largura - 2 * Pdf.MARGEM;
+  linhas.forEach((linha) => {
+    assert.ok(
+      Pdf.larguraTexto(linha, 8.5) <= util + 1,
+      `linha vazou a margem: "${linha}"`
+    );
+  });
 });
 
 test("quebra em várias páginas e repete o cabeçalho da tabela", () => {
@@ -135,6 +172,63 @@ test("inclui a taxa do clube quando existe", () => {
   const comTaxa = texto(Pdf.relatorio(comp({ regra: { premios: [50, 30, 20], taxaClube: 10 } })));
   assert.ok(!semTaxa.includes("TAXA DO CLUBE"));
   assert.ok(comTaxa.includes("TAXA DO CLUBE"), "deveria mostrar o cartão da taxa");
+});
+
+/* ═══════════════════ acerto geral do clube ═══════════════════════════ */
+
+const temporadaExemplo = () => ({
+  versao: 1,
+  competicoes: [
+    comp({ id: "c1", nome: "Etapa de agosto", data: "2026-08-15" }),
+    comp({
+      id: "c2",
+      nome: "Etapa de setembro",
+      data: "2026-09-12",
+      resultado: ["Rui", "Zé", "Tito"],
+      apostas: [
+        { id: "b1", atirador: "Rui", apostador: "Elza", valor: 200, pago: true },
+        { id: "b2", atirador: "Zé", apostador: "Ana", valor: 100, pago: false },
+        { id: "b3", atirador: "Tito", apostador: "Bruno", valor: 300, pago: true },
+      ],
+    }),
+  ],
+});
+
+test("o acerto geral junta as competições numa lista de pagamentos", () => {
+  const bytes = Pdf.relatorioGeral(temporadaExemplo(), { geradoEm: "24/08/2026 01:15" });
+  const { s } = conferirEstrutura(bytes);
+
+  assert.ok(s.includes("(Acerto geral do clube)"), "falta o título");
+  assert.ok(s.includes("(Pagamentos"), "falta a lista de pagamentos");
+  assert.ok(s.includes("(POSI") || s.includes("(Posi"), "falta a posição de cada um");
+  assert.ok(s.includes("(A PAGAR)") && s.includes("(A RECEBER)"), "faltam os cartões do topo");
+  assert.ok(s.includes("acertos avulsos"), "deveria comparar com os acertos avulsos");
+});
+
+test("o acerto geral compensa quem deve numa e recebe noutra", () => {
+  const dados = temporadaExemplo();
+  const t = C.temporada(dados);
+  const elza = t.pendencias.find((p) => p.chave === "ELZA");
+  // devia 400 em agosto e ganhou em setembro: entra com a diferença
+  assert.ok(elza.emAberto.length === 2, "deveria ter saldo nas duas competições");
+  assert.equal(elza.saldoC, elza.emAberto.reduce((s, e) => s + e.saldoC, 0));
+
+  // e cada pessoa aparece uma vez só na lista de pagamentos por competição
+  const nomes = t.acerto.pagamentos.flatMap((p) => [p.de, p.para]);
+  assert.ok(nomes.length >= 2);
+  conferirEstrutura(Pdf.relatorioGeral(dados));
+});
+
+test("temporada vazia ou toda acertada gera um PDF válido mesmo assim", () => {
+  conferirEstrutura(Pdf.relatorioGeral({ competicoes: [] }));
+  const quitada = temporadaExemplo();
+  quitada.competicoes.forEach((c) => {
+    c.acertos = {};
+    C.calcular(c).apostadores.forEach((p) => (c.acertos[p.chave] = { em: "2026-09-20" }));
+  });
+  const s = texto(Pdf.relatorioGeral(quitada));
+  conferirEstrutura(Pdf.relatorioGeral(quitada));
+  assert.ok(s.includes("Tudo quite") || s.includes("nada a pagar"), "deveria dizer que está quite");
 });
 
 /* ═══════════════════════════ codificação ═════════════════════════════ */

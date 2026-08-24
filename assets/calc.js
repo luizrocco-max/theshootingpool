@@ -325,7 +325,13 @@
     const fecha = totais.premiosC + taxaC + sobraClubeC === pote;
     if (!fecha) alertas.push("Erro interno de arredondamento — avise o desenvolvedor.");
 
+    // quem paga quem, no menor número de transferências
+    const saldosAcerto = saldosEmAberto({ apostadores }, NOME_CAIXA);
+    const acerto = pagamentos(saldosAcerto);
+
     return {
+      saldosAcerto,
+      acerto,
       regra,
       pote,
       taxaC,
@@ -340,6 +346,99 @@
       definido,
       fecha,
     };
+  }
+
+  /* ══════════════════ quem paga quem, no menor número ═══════════════ */
+
+  const NOME_CAIXA = "Caixa do clube";
+
+  /**
+   * Recebe saldos que somam zero e devolve a lista de pagamentos que quita
+   * todo mundo — procurando o menor número de transferências.
+   *
+   * Sem isso, cada pessoa acerta com o caixa: são tantas transferências
+   * quantas pessoas. Aqui, quem deve paga direto quem tem a receber, e o
+   * caixa só entra no que sobrar.
+   *
+   * O caminho é: primeiro os pares que se anulam exatamente (uma
+   * transferência cada, sempre o melhor possível), depois os trios que
+   * fecham em zero, e o resto no guloso — o maior devedor paga o maior
+   * credor. Cada passo zera pelo menos uma pessoa, então nunca passa de
+   * (participantes − 1) pagamentos.
+   *
+   * @param {Array<{nome:string, saldoC:number}>} saldos
+   * @returns {{pagamentos:Array<{de:string,para:string,valorC:number}>,
+   *            participantes:number, fecha:boolean}}
+   */
+  function pagamentos(saldos) {
+    const pessoas = (saldos || [])
+      .map((s) => ({ nome: norm(s.nome), saldo: Math.round(Number(s.saldoC) || 0) }))
+      .filter((p) => p.saldo !== 0 && p.nome);
+
+    const total = pessoas.reduce((s, p) => s + p.saldo, 0);
+    if (total !== 0) return { pagamentos: [], participantes: pessoas.length, fecha: false };
+
+    const transferencias = [];
+    const quita = (devedor, credor) => {
+      const valor = Math.min(-devedor.saldo, credor.saldo);
+      if (valor <= 0) return;
+      devedor.saldo += valor;
+      credor.saldo -= valor;
+      transferencias.push({ de: devedor.nome, para: credor.nome, valorC: valor });
+    };
+    const vivos = () => pessoas.filter((p) => p.saldo !== 0);
+
+    // 1) pares que se anulam: uma transferência resolve os dois
+    for (const d of pessoas) {
+      if (d.saldo >= 0) continue;
+      const c = pessoas.find((x) => x.saldo > 0 && x.saldo === -d.saldo);
+      if (c) quita(d, c);
+    }
+
+    // 2) trios que fecham em zero: duas transferências resolvem os três
+    for (let voltas = 0; voltas < pessoas.length; voltas++) {
+      const restantes = vivos();
+      let achou = null;
+      for (let i = 0; i < restantes.length && !achou; i++)
+        for (let j = i + 1; j < restantes.length && !achou; j++)
+          for (let k = j + 1; k < restantes.length && !achou; k++)
+            if (restantes[i].saldo + restantes[j].saldo + restantes[k].saldo === 0)
+              achou = [restantes[i], restantes[j], restantes[k]];
+      if (!achou) break;
+      const devedores = achou.filter((p) => p.saldo < 0).sort((a, b) => a.saldo - b.saldo);
+      const credores = achou.filter((p) => p.saldo > 0).sort((a, b) => b.saldo - a.saldo);
+      for (const d of devedores) for (const c of credores) if (d.saldo < 0 && c.saldo > 0) quita(d, c);
+    }
+
+    // 3) o que sobrou: o maior devedor paga o maior credor
+    for (;;) {
+      const restantes = vivos();
+      if (!restantes.length) break;
+      const devedor = restantes.filter((p) => p.saldo < 0).sort((a, b) => a.saldo - b.saldo)[0];
+      const credor = restantes.filter((p) => p.saldo > 0).sort((a, b) => b.saldo - a.saldo)[0];
+      if (!devedor || !credor) break; // não deveria acontecer com soma zero
+      quita(devedor, credor);
+    }
+
+    transferencias.sort((a, b) => b.valorC - a.valorC || a.de.localeCompare(b.de, "pt-BR"));
+    return {
+      pagamentos: transferencias,
+      participantes: (saldos || []).filter((s) => Math.round(Number(s.saldoC) || 0) !== 0).length,
+      fecha: !vivos().length,
+    };
+  }
+
+  /**
+   * Monta a lista de acertos em aberto de uma competição, já com o caixa do
+   * clube: ele guarda o dinheiro das apostas pagas, então participa do
+   * rateio como qualquer um.
+   */
+  function saldosEmAberto(conta, nomeCaixa) {
+    const abertos = conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0);
+    const soma = abertos.reduce((s, p) => s + p.saldoC, 0);
+    const lista = abertos.map((p) => ({ nome: p.nome, chave: p.chave, saldoC: p.saldoC }));
+    if (soma !== 0) lista.push({ nome: nomeCaixa || NOME_CAIXA, caixa: true, saldoC: -soma });
+    return lista;
   }
 
   /* ─────────────────────────── simulação (odds) ──────────────────────── */
@@ -396,6 +495,7 @@
             pendenteC: 0,
             competicoes: 0,
             premiadas: 0,
+            emAberto: [],
           });
         const t = apostadores.get(p.chave);
         t.nome = p.nome;
@@ -404,7 +504,11 @@
         t.lucroC += p.lucroC;
         t.competicoes += 1;
         if (p.premioC > 0) t.premiadas += 1;
-        if (!p.acertado) t.pendenteC += p.saldoC;
+        if (!p.acertado) {
+          t.pendenteC += p.saldoC;
+          if (p.saldoC !== 0)
+            t.emAberto.push({ competicao: comp.nome, data: comp.data, saldoC: p.saldoC });
+        }
       });
 
       conta.apostas.forEach((a) => {
@@ -469,11 +573,25 @@
       aReceberC: comps.reduce((s, c) => s + c.conta.totais.aReceberC, 0),
     };
 
+    // acerto geral: junta o que está em aberto em todas as competições e
+    // resolve tudo de uma vez — quem deve numa e tem a receber noutra acaba
+    // com um pagamento só, ou nenhum
+    const pendencias = listaApostadores
+      .filter((p) => p.pendenteC !== 0)
+      .map((p) => ({ nome: p.nome, chave: p.chave, saldoC: p.pendenteC, emAberto: p.emAberto }))
+      .sort((a, b) => b.saldoC - a.saldoC || a.nome.localeCompare(b.nome, "pt-BR"));
+    const somaPend = pendencias.reduce((s, p) => s + p.saldoC, 0);
+    const saldosAcerto = pendencias.map((p) => ({ nome: p.nome, chave: p.chave, saldoC: p.saldoC }));
+    if (somaPend !== 0) saldosAcerto.push({ nome: NOME_CAIXA, caixa: true, saldoC: -somaPend });
+
     return {
       comps,
       apostadores: listaApostadores,
       atiradores: listaAtiradores,
       maxColocacoes,
+      pendencias,
+      saldosAcerto,
+      acerto: pagamentos(saldosAcerto),
       totais,
     };
   }
@@ -485,8 +603,11 @@
 
   return {
     MAX_COLOCACOES,
+    NOME_CAIXA,
     REGRA_PADRAO,
     rotuloPosicao,
+    pagamentos,
+    saldosEmAberto,
     regraDe,
     cent,
     reais,

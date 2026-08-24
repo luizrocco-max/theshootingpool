@@ -458,8 +458,10 @@
     if (!conta.apostadores.length) {
       $("tabelaAcerto").innerHTML = `<div class="vazio">Nenhuma aposta lançada ainda.</div>`;
       $("caixaClube").innerHTML = "";
+      $("pagamentosComp").innerHTML = "";
       return;
     }
+    $("pagamentosComp").innerHTML = cardPagamentos(conta.acerto, "Quem paga quem");
 
     const linha = (p) => {
       const situacao = p.acertado
@@ -515,6 +517,48 @@
       </div>`;
   }
 
+  /**
+   * A lista de "quem paga quem": o menor número de transferências que quita
+   * todo mundo. Usada na competição e no acerto geral da temporada.
+   */
+  function cardPagamentos(acerto, titulo, extras) {
+    const lista = (acerto && acerto.pagamentos) || [];
+    const o = extras || {};
+    if (!lista.length)
+      return `<div class="card">
+        <h3>${esc(titulo)}</h3>
+        <div class="vazio">Ninguém tem nada a pagar nem a receber. Tudo quite.</div>
+      </div>`;
+
+    const total = lista.reduce((s, p) => s + p.valorC, 0);
+    return `<div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0">${esc(titulo)} — ${lista.length} pagamento${lista.length > 1 ? "s" : ""}</h3>
+        <span class="sp"></span>
+        ${o.botoes || ""}
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Quem paga</th><th></th><th>Para quem</th><th class="num">Valor</th></tr></thead>
+        <tbody>${lista
+          .map(
+            (p) => `<tr class="win">
+              <td>${esc(p.de)}</td>
+              <td style="color:var(--muted)">→</td>
+              <td>${esc(p.para)}</td>
+              <td class="num">${money(p.valorC)}</td>
+            </tr>`
+          )
+          .join("")}</tbody>
+      </table></div>
+      <div class="note">
+        Total de ${esc(fmt(total))} em ${lista.length} pagamento${lista.length > 1 ? "s" : ""}${
+      o.avulsos && o.avulsos > lista.length ? `, no lugar de ${o.avulsos} acertos avulsos` : ""
+    }. Quem deve paga direto quem tem a receber; o <b>caixa do clube</b> é o dinheiro das apostas
+        já pagas, que está com o organizador.
+      </div>
+    </div>`;
+  }
+
   function resumoTexto() {
     const c = compAtual();
     if (!c) return "";
@@ -561,8 +605,19 @@
       $("rankApostadores").innerHTML = `<div class="card"><div class="vazio">Sem apostas registradas ainda.</div></div>`;
       $("rankAtiradores").innerHTML = "";
       $("listaComps").innerHTML = "";
+      $("acertoGeral").innerHTML = "";
       return;
     }
+
+    // acerto geral: junta todas as competições em aberto num pagamento só por pessoa
+    const avulsos = t.comps.reduce(
+      (s, c) => s + c.conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0).length,
+      0
+    );
+    $("acertoGeral").innerHTML = cardPagamentos(t.acerto, "Acerto geral do clube", {
+      avulsos,
+      botoes: `<button class="btn mini naoimprime" data-act="pdfgeral">📄 Baixar PDF do acerto</button>`,
+    });
 
     $("rankApostadores").innerHTML = `
       <div class="card">
@@ -850,6 +905,19 @@
       baixarArquivo(
         `apostas-${slug(c.nome)}${c.data ? "-" + c.data : ""}.pdf`,
         bytes,
+        "application/pdf"
+      );
+    } catch (err) {
+      alert("Não consegui gerar o PDF: " + err.message);
+    }
+  }
+
+  /** Acerto geral: todas as competições em aberto num roteiro de pagamento. */
+  function gerarPDFGeral() {
+    try {
+      baixarArquivo(
+        `acerto-geral-${hoje()}.pdf`,
+        Pdf.relatorioGeral(DADOS, { geradoEm: agora() }),
         "application/pdf"
       );
     } catch (err) {
@@ -1241,6 +1309,8 @@
         }
       } else if (act === "pdf") {
         gerarPDF();
+      } else if (act === "pdfgeral") {
+        gerarPDFGeral();
       } else if (act === "acertar") {
         acertar(btn.dataset.chave);
       } else if (act === "desacertar") {
