@@ -438,6 +438,62 @@
   };
 
   /**
+   * Quem entrou no lance de um sócio e pagou a parte dele.
+   *
+   * Num lance rachado, é comum um dos sócios bancar o valor inteiro na hora do
+   * leilão e o outro entrar só na cota. Quem lê o relatório precisa enxergar
+   * isso de cara: o dinheiro saiu do bolso de um, mas o lance é dos dois.
+   * Sem esta seção o adiantamento só aparecia diluído no saldo.
+   */
+  function secaoBancados(doc, conta, larg) {
+    const linhas = [];
+    conta.apostas.forEach((a) => {
+      if (!a.temSocios) return;
+      a.participacoes.forEach((p) => {
+        const adiantouC = p.pagoC - p.cotaC;
+        if (adiantouC <= 0) return;
+        // por quem: os sócios do mesmo lance que ficaram devendo a própria cota
+        const por = a.participacoes
+          .filter((x) => x.chave !== p.chave && x.pagoC < x.cotaC)
+          .map((x) => x.nome)
+          .join(", ");
+        linhas.push([
+          p.nome,
+          a.atirador,
+          fmt(a.valorC),
+          fmt(p.pagoC),
+          fmt(adiantouC),
+          por || "-",
+        ]);
+      });
+    });
+    if (!linhas.length) return;
+
+    doc.espaco(10);
+    doc.titulo("Quem bancou lance de sócio");
+    // nome de atirador é longo ("Alexandre P. Scachetti"): as duas colunas de
+    // nome levam a folga, e as de dinheiro ficam com o que basta
+    const c1 = larg * 0.19, c2 = larg * 0.21, cv = 68;
+    doc.tabela({
+      colunas: [
+        { titulo: "Bancou", largura: c1 },
+        { titulo: "Lance no atirador", largura: c2 },
+        { titulo: "Lance R$", largura: cv, dir: true },
+        { titulo: "Pôs R$", largura: cv, dir: true },
+        { titulo: "Adiantou R$", largura: cv, dir: true },
+        { titulo: "Pela cota de", largura: larg - c1 - c2 - 3 * cv },
+      ],
+      linhas,
+      destaques: linhas.map(() => true),
+    });
+    doc.paragrafo(
+      "Estes sócios puseram mais do que a própria cota: pagaram a parte do outro na hora do " +
+        "leilão. O que adiantaram já volta para eles no acerto, e sai do saldo de quem não pôs.",
+      { cor: [0.42, 0.45, 0.4], tam: 8.5 }
+    );
+  }
+
+  /**
    * A lista de "quem paga quem", com quadradinho para ir marcando.
    * É a seção que serve de roteiro na hora de acertar as contas.
    */
@@ -520,7 +576,7 @@
 
     doc.paragrafo(
       "Divisão do bolo: " +
-        regra.premios.map((p, i) => `${C.rotuloPosicao(i)} ${String(p).replace(".", ",")}%`).join("  ·  ") +
+        regra.premios.map((p, i) => `${C.rotuloPosicao(i)} ${C.pct(p)}%`).join("  ·  ") +
         "   |   Rateio " +
         (regra.rateio === "igual" ? "em partes iguais entre os apostadores" : "proporcional ao valor apostado"),
       { cor: [0.42, 0.45, 0.4], tam: 9 }
@@ -544,13 +600,13 @@
             posicao,
             f.atirador,
             f.repetida ? "já premiado acima" : "ninguém apostou nele",
-            String(f.pct).replace(".", ",") + "%",
+            C.pct(f.pct) + "%",
             fmt(0),
           ]);
           destaques.push(false);
           return;
         }
-        linhas.push([posicao, f.atirador, "", String(f.pct).replace(".", ",") + "%", fmt(f.valorC)]);
+        linhas.push([posicao, f.atirador, "", C.pct(f.pct) + "%", fmt(f.valorC)]);
         destaques.push(true);
         f.apostadores.forEach((p) => {
           linhas.push(["", "", p.nome, "", fmt(p.premioC)]);
@@ -579,7 +635,8 @@
 
     /* ── acerto de contas ─────────────────────────────────────────────── */
     doc.titulo("Acerto de contas");
-    const colValor = (larg - larg * 0.26 - 78) / 4;
+    // 92pt na última coluna: "acerta com o sócio" não cabia em 78 e saía cortado
+    const colValor = (larg - larg * 0.26 - 92) / 4;
     doc.tabela({
       colunas: [
         { titulo: "Apostador", largura: larg * 0.26 },
@@ -587,16 +644,17 @@
         { titulo: "Deve R$", largura: colValor, dir: true },
         { titulo: "Prêmio R$", largura: colValor, dir: true },
         { titulo: "Saldo R$", largura: colValor, dir: true },
-        { titulo: "Situação", largura: 78 },
+        { titulo: "Situação", largura: 92 },
       ],
       linhas: conta.apostadores.map((p) => [
         p.nome,
         fmt(p.apostadoC),
-        p.devendoC ? fmt(p.devendoC) : "-",
+        // negativo aqui é o contrário de dever: bancou a parte de um sócio
+        p.devendoC ? fmt(p.devendoC) : p.adiantadoC ? fmt(-p.adiantadoC) : "-",
         p.premioC ? fmt(p.premioC) : "-",
         fmt(p.saldoC),
         p.foraDoCaixa
-          ? "acerta com o socio"
+          ? "acerta com o sócio"
           : p.acertado
           ? "acertado"
           : p.saldoC > 0
@@ -609,7 +667,8 @@
       destaques: conta.apostadores.map((p) => !p.acertado && p.saldoC < 0),
     });
 
-    const abertos = conta.apostadores.filter((p) => !p.acertado);
+    // quem ainda precisa mover dinheiro: quem está quite não é acerto pendente
+    const abertos = conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0);
     doc.paragrafo(
       `O clube paga R$ ${fmt(conta.totais.aPagarC)}  ·  o clube recebe R$ ${fmt(
         conta.totais.aReceberC
@@ -621,6 +680,9 @@
       { cor: [0.42, 0.45, 0.4], tam: 8.5 }
     );
 
+    /* ── quem bancou lance de sócio ───────────────────────────────────── */
+    secaoBancados(doc, conta, larg);
+
     /* ── quem paga quem ───────────────────────────────────────────────── */
     doc.espaco(10);
     secaoPagamentos(doc, conta.acerto, larg);
@@ -630,6 +692,40 @@
       doc.espaco(10);
       doc.titulo("Apostas lançadas");
       const c1 = larg * 0.26, c2 = larg * 0.26, c3 = 70;
+
+      // um lance rachado ganha uma linha por sócio logo abaixo, com a cota de
+      // cada um e quem pôs o dinheiro: sem isso o relatório mostraria só o
+      // nome de quem bancou, e o sócio sumiria da lista
+      const linhasApostas = { linhas: [], destaques: [] };
+      conta.apostas.forEach((a) => {
+        linhasApostas.linhas.push([
+          a.atirador,
+          a.temSocios ? a.participacoes.map((p) => p.nome).join(" + ") : a.apostador,
+          fmt(a.valorC),
+          a.premioC ? fmt(a.premioC) : "-",
+          a.pago ? "pago" : a.parcial ? "em parte" : "em aberto",
+        ]);
+        linhasApostas.destaques.push(!a.pago);
+        if (!a.temSocios) return;
+        a.participacoes.forEach((p) => {
+          linhasApostas.linhas.push([
+            "",
+            p.nome,
+            fmt(p.cotaC),
+            // com um sócio escolhido para receber, o prêmio não segue a cota:
+            // sem esta coluna a linha ficava com cota zero e nenhuma explicação
+            p.premioC ? fmt(p.premioC) : "-",
+            // quem pôs o lance inteiro bancou a parte do outro
+            p.pagoC >= a.valorC && a.valorC > 0
+              ? "bancou tudo"
+              : p.pagoC
+              ? "pôs " + fmt(p.pagoC)
+              : "não pôs nada",
+          ]);
+          linhasApostas.destaques.push(false);
+        });
+      });
+
       doc.tabela({
         colunas: [
           { titulo: "Atirador", largura: c1 },
@@ -638,15 +734,15 @@
           { titulo: "Prêmio R$", largura: (larg - c1 - c2 - c3) / 2, dir: true },
           { titulo: "Pagamento", largura: c3 },
         ],
-        linhas: conta.apostas.map((a) => [
-          a.atirador,
-          a.apostador,
-          fmt(a.valorC),
-          a.premioC ? fmt(a.premioC) : "-",
-          a.pago ? "pago" : "em aberto",
-        ]),
-        destaques: conta.apostas.map((a) => !a.pago),
+        linhas: linhasApostas.linhas,
+        destaques: linhasApostas.destaques,
       });
+      if (conta.totais.nSocios)
+        doc.paragrafo(
+          "Nos lances rachados, a linha do lance é o total; abaixo dela vem a cota de cada sócio e " +
+            "quanto cada um pôs. Quem bancou a parte do outro recebe essa diferença de volta no acerto.",
+          { cor: [0.42, 0.45, 0.4], tam: 8.5 }
+        );
     }
 
     return doc.bytes();

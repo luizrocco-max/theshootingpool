@@ -391,3 +391,12 @@ test("aceita o jeito brasileiro de escrever dinheiro", () => {
   assert.equal(C.parseValor(""), 0);
   assert.equal(C.parseValor("abc"), 0);
 });
+
+test("percentual vira texto curto, sem lixo de ponto flutuante", () => {
+  assert.equal(C.pct(50), "50");
+  assert.equal(C.pct(12.5), "12,5");
+  assert.equal(C.pct(50 / 6), "8,3333"); // 8.333333333333334
+  assert.equal(C.pct(100 / 3), "33,3333");
+  assert.equal(C.pct(0), "0");
+  assert.equal(C.pct("abacaxi"), "0");
+});

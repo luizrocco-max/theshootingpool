@@ -71,7 +71,11 @@
         nome: C.norm(c.nome) || "Competição",
         data: c.data || "",
         regra: c.regra || null,
-        resultado: Array.isArray(c.resultado) ? c.resultado.slice(0, 3) : ["", "", ""],
+        // o pódio vai até MAX_COLOCACOES, não até o 3º: cortar em 3 aqui
+        // apagava do 4º lugar em diante toda vez que a página era recarregada
+        resultado: Array.isArray(c.resultado)
+          ? c.resultado.slice(0, C.MAX_COLOCACOES)
+          : ["", "", ""],
         acertos: c.acertos || {},
         apostas: ((c.apostas) || []).map((a) => ({
           id: a.id || uid("a"),
@@ -188,7 +192,7 @@
       "Apostas do clube · " +
       (c
         ? C.regraDe(c)
-            .premios.map((p, i) => `${String(p).replace(".", ",")}% para o ${C.rotuloPosicao(i)}`)
+            .premios.map((p, i) => `${C.pct(p)}% para o ${C.rotuloPosicao(i)}`)
             .join(" · ")
         : "de tiro");
 
@@ -283,10 +287,21 @@
             const dono = a.temSocios
               ? a.participacoes.map((p) => p.nome).join(" + ")
               : a.apostador;
+            // quem pôs o lance inteiro sozinho bancou a parte dos outros
+            const bancou =
+              a.temSocios && a.valorC > 0
+                ? a.participacoes.find((p) => p.pagoC >= a.valorC)
+                : null;
             const pagamento = a.temSocios
               ? `<button class="tag ${a.pago ? "ok" : a.parcial ? "mut" : "no"}" data-act="socios"
                     data-id="${esc(a.id)}" title="Ver os sócios">${
-                  a.pago ? "✓ pago" : a.parcial ? "◐ " + esc(fmt(a.pagoC)) + " de " + esc(fmt(a.valorC)) : "✗ não pagou"
+                  bancou
+                    ? "✓ " + esc(bancou.nome) + " bancou"
+                    : a.pago
+                    ? "✓ pago"
+                    : a.parcial
+                    ? "◐ " + esc(fmt(a.pagoC)) + " de " + esc(fmt(a.valorC))
+                    : "✗ não pagou"
                 }</button>`
               : `<button class="tag ${a.pago ? "ok" : "no"}" data-act="pago" data-id="${esc(a.id)}">${
                   a.pago ? "✓ pago" : "✗ não pagou"
@@ -333,7 +348,7 @@
     }
     nota.className = "somapct" + (fecha ? "" : " alerta100");
     nota.innerHTML =
-      `Soma dos percentuais: <b>${esc(String(Math.round(soma * 100) / 100).replace(".", ","))}%</b>` +
+      `Soma dos percentuais: <b>${esc(C.pct(soma))}%</b>` +
       (fecha ? "" : " — não fecha 100%, mas tudo bem: o bolo é dividido nessa mesma proporção.");
   }
 
@@ -348,7 +363,7 @@
             <input id="fPodio${i}" list="dlAtiradores" placeholder="Nome do atirador"
                    value="${esc((c.resultado || [])[i] || "")}">
             <input id="fPct${i}" class="pctbox" inputmode="decimal" title="% do bolo desta colocação"
-                   value="${esc(String(pct).replace(".", ","))}">
+                   value="${esc(C.pct(pct))}">
           </div>
         </div>`
       )
@@ -409,8 +424,8 @@
                   .map((p) => `<li><span>${esc(p.nome)}</span><span>${esc(fmt(p.premioC))}</span></li>`)
                   .join("")}</ul>`;
             const pctReal = f.ativa && Math.abs(f.pctEfetivo - f.pct) > 0.01
-              ? `${f.pct}% → ${f.pctEfetivo.toFixed(1)}%`
-              : `${f.pct}%`;
+              ? `${C.pct(f.pct)}% → ${f.pctEfetivo.toFixed(1).replace(".", ",")}%`
+              : `${C.pct(f.pct)}%`;
             return `<div class="pod g${i + 1}">
               <span class="pct">${esc(pctReal)}</span>
               <div class="medal">${medalha(i)} <span style="font-size:13px;color:var(--muted);font-weight:700">${esc(C.rotuloPosicao(i))}</span></div>
@@ -473,7 +488,11 @@
       { v: esc(fmt(paga)), l: "O clube paga", cls: "g" },
       { v: esc(fmt(recebe)), l: "O clube recebe", cls: "b" },
       { v: esc(fmt(recebe - paga)), l: "Efeito no caixa", cls: "a" },
-      { v: String(conta.apostadores.filter((p) => !p.acertado).length), l: "Acertos em aberto" },
+      // quem está quite não é acerto pendente — é o mesmo critério da aba
+      {
+        v: String(conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0).length),
+        l: "Acertos em aberto",
+      },
     ]);
 
     if (!conta.apostadores.length) {
@@ -511,7 +530,10 @@
           p.devendoC
             ? esc(fmt(p.devendoC))
             : p.adiantadoC
-            ? `<span class="money pos" title="bancou a parte de um sócio">−${esc(fmt(p.adiantadoC))}</span>`
+            ? // no papel e no celular o title não existe: o "bancou" tem que
+              // estar na tela, senão sobra um número negativo sem explicação
+              `<span class="money pos">−${esc(fmt(p.adiantadoC))}</span>` +
+              ` <span class="tag mut">bancou</span>`
             : "—"
         }</td>
         <td class="num">${p.premioC ? esc(fmt(p.premioC)) : "—"}</td>
@@ -780,7 +802,7 @@
           .join("")}
       </div>
       <div class="hint" style="margin-bottom:16px">Hoje: <b>${esc(
-        r.premios.map((x, i) => C.rotuloPosicao(i) + " " + String(x).replace(".", ",") + "%").join(" · ")
+        r.premios.map((x, i) => C.rotuloPosicao(i) + " " + C.pct(x) + "%").join(" · ")
       )}</b>. Estes são atalhos — para um valor qualquer, edite direto na aba 🏆 Resultado, onde dá
         para acrescentar ou tirar colocações.</div>
       <div class="formgrid" style="grid-template-columns:repeat(3,1fr);margin-top:12px">
@@ -944,11 +966,15 @@
     const c = compAtual();
     if (!c) return;
     const conta = C.calcular(c);
-    const cab = ["Atirador", "Apostador", "Valor", "Pago", "Premio", "Saldo do apostador"];
+    const cab = ["Atirador", "Apostador", "Valor", "Pago", "Premio", "Saldo do apostador", "Socios"];
     const dec = (v) => (v / 100).toFixed(2).replace(".", ",");
     const linhas = conta.apostas.map((a) => {
       const p = conta.apostadores.find((x) => x.chave === C.chave(a.apostador));
-      return [a.atirador, a.apostador, dec(a.valorC), a.pago ? "sim" : "nao", dec(a.premioC), dec(p ? p.saldoC : 0)];
+      // sem esta coluna o sócio que não bancou sumia do CSV inteiro
+      const socios = a.temSocios
+        ? a.participacoes.map((s) => `${s.nome}: cota ${dec(s.cotaC)}, pos ${dec(s.pagoC)}`).join(" | ")
+        : "";
+      return [a.atirador, a.apostador, dec(a.valorC), a.pago ? "sim" : "nao", dec(a.premioC), dec(p ? p.saldoC : 0), socios];
     });
     const csv = [cab, ...linhas]
       .map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(";"))
@@ -983,15 +1009,24 @@
 
     const valorC = C.cent(a.valor);
     const existentes = Array.isArray(a.socios) && a.socios.length ? a.socios : null;
+    const emReais = (centavos) => (centavos / 100).toFixed(2).replace(".", ",");
+    // as cotas em dinheiro, calculadas do mesmo jeito que o motor calcula
+    const pesos = (existentes || []).map((s) => Math.max(0, Number(s.cota) || 0));
+    const cotasC = existentes
+      ? C.distribuir(valorC, pesos.some((p) => p > 0) ? pesos : existentes.map(() => 1))
+      : [];
     const linhas = existentes
-      ? existentes.map((s) => ({
+      ? existentes.map((s, i) => ({
           nome: s.nome,
           cota: s.cota === undefined ? 1 : s.cota,
-          pagouTexto: s.pagou === true ? C.reais(0) : s.pagou ? String(C.reais(C.cent(s.pagou))).replace(".", ",") : "",
+          // pagou === true quer dizer "pagou a própria cota" — é assim que a
+          // planilha grava um "sim". Mostrar 0 aqui apagaria o pagamento na
+          // primeira vez que alguém abrisse e salvasse o lance.
+          pagouTexto: s.pagou === true ? emReais(cotasC[i]) : s.pagou ? emReais(C.cent(s.pagou)) : "",
         }))
       : [
           // primeira vez: quem lançou entra com tudo, do jeito que já estava
-          { nome: a.apostador, cota: 1, pagouTexto: a.pago ? String(C.reais(valorC)).replace(".", ",") : "" },
+          { nome: a.apostador, cota: 1, pagouTexto: a.pago ? emReais(valorC) : "" },
           { nome: "", cota: 1, pagouTexto: "" },
         ];
 
@@ -1628,7 +1663,12 @@
       const campoNome = $("fPodio" + i);
       const campoPct = $("fPct" + i);
       resultado.push(campoNome ? C.norm(campoNome.value) : (c.resultado || [])[i] || "");
-      const v = campoPct ? parseFloat(String(campoPct.value).replace(",", ".")) : pct;
+      // O campo mostra o percentual arredondado (8,3333 e não 8,333333…).
+      // Se o texto continua sendo esse arredondamento, ninguém mexeu: vale o
+      // valor cheio que já estava gravado, senão a divisão perderia um centavo.
+      const texto = campoPct ? String(campoPct.value).trim() : "";
+      if (campoPct && texto === C.pct(pct)) return premios.push(pct);
+      const v = campoPct ? parseFloat(texto.replace(",", ".")) : pct;
       premios.push(Number.isFinite(v) && v >= 0 ? v : pct);
     });
     c.resultado = resultado;

@@ -193,14 +193,16 @@ test("dá para escolher qual sócio recebe o prêmio inteiro", () => {
   const luiz = achar(conta, "Luiz");
   const joao = achar(conta, "João");
 
+  // quem leva o prêmio responde pelo lance: o João leva os 1.000 e é
+  // descontado dos 500 do lance, e o Luiz recebe de volta o que bancou
   assert.equal(joao.premioC, 100000, "o prêmio inteiro vai para o escolhido");
-  assert.equal(joao.saldoC, 100000, "e ele recebe os 1.000");
+  assert.equal(joao.apostadoC, 50000, "e o lance inteiro passa a ser dele");
+  assert.equal(joao.devendoC, 50000, "que ele ainda não pagou");
+  assert.equal(joao.saldoC, 50000, "recebe 1.000 menos os 500 do lance");
+
   assert.equal(luiz.premioC, 0);
-  assert.equal(
-    luiz.saldoC,
-    0,
-    "o Luiz não fica no prejuízo: o lance que ele bancou passou a ser dele nas contas"
-  );
+  assert.equal(luiz.adiantadoC, 50000, "o Luiz bancou o lance do João");
+  assert.equal(luiz.saldoC, 50000, "e recebe de volta os 500 que pôs");
   assert.ok(conta.fecha);
 });
 
@@ -214,8 +216,9 @@ test("o escolhido recebe mesmo sem ter posto dinheiro", () => {
   comp.apostas[0].recebedor = "Ana";
   const conta = C.calcular(comp);
   assert.equal(achar(conta, "Ana").premioC, 100000);
-  assert.equal(achar(conta, "Luiz").saldoC, 0, "quem bancou sai quite");
-  assert.equal(achar(conta, "Ana").saldoC, 100000);
+  assert.equal(achar(conta, "Ana").apostadoC, 50000, "levando o prêmio, o lance é dela");
+  assert.equal(achar(conta, "Ana").saldoC, 50000, "1.000 do prêmio menos os 500 do lance");
+  assert.equal(achar(conta, "Luiz").saldoC, 50000, "quem bancou recebe de volta o que pôs");
   assert.ok(conta.fecha);
 });
 
@@ -227,7 +230,7 @@ test("escolhido que não é sócio do lance é ignorado", () => {
   assert.equal(achar(conta, "João").saldoC, 25000);
 });
 
-test("com o lance ainda em aberto, escolher quem recebe não muda quem deve", () => {
+test("com o lance em aberto, quem foi escolhido para receber é quem deve", () => {
   const comp = competicao();
   comp.apostas[0].socios = [
     { nome: "Luiz", cota: 50, pagou: 0 },
@@ -235,12 +238,24 @@ test("com o lance ainda em aberto, escolher quem recebe não muda quem deve", ()
   ];
   comp.apostas[0].recebedor = "João";
   const conta = C.calcular(comp);
-  assert.equal(achar(conta, "Luiz").devendoC, 25000, "cada um continua devendo a cota");
-  assert.equal(achar(conta, "João").devendoC, 25000);
-  assert.equal(achar(conta, "João").premioC, 100000, "mas o prêmio vai todo para o João");
-  assert.equal(achar(conta, "Luiz").saldoC, -25000);
-  assert.equal(achar(conta, "João").saldoC, 75000);
+  // ninguém pôs dinheiro ainda; como o João leva o prêmio, o lance é dele
+  assert.equal(achar(conta, "João").devendoC, 50000, "o lance inteiro é do escolhido");
+  assert.equal(achar(conta, "Luiz").devendoC, 0, "quem não leva nada não deve nada");
+  assert.equal(achar(conta, "João").premioC, 100000, "e o prêmio vai todo para o João");
+  assert.equal(achar(conta, "João").saldoC, 50000);
+  assert.equal(achar(conta, "Luiz").saldoC, 0);
   assert.ok(conta.fecha);
+});
+
+test("escolher quem recebe não muda o total que sai do caixa", () => {
+  const semEscolha = C.calcular(competicao());
+  const comp = competicao();
+  comp.apostas[0].recebedor = "João";
+  const comEscolha = C.calcular(comp);
+  const soma = (c) => c.apostadores.reduce((s, p) => s + p.saldoC, 0);
+  assert.equal(soma(comEscolha), soma(semEscolha), "muda quem recebe, não quanto sai");
+  assert.equal(comEscolha.totais.premiosC, semEscolha.totais.premiosC);
+  assert.ok(comEscolha.fecha && semEscolha.fecha);
 });
 
 /* ══════════════════ abater ou não o lance do prêmio ══════════════════ */
@@ -433,4 +448,66 @@ test("com sócios, o bolo fecha no centavo em 200 competições aleatórias", ()
     assert.equal(conta.saldosAcerto.reduce((s, x) => s + x.saldoC, 0), 0, `competição ${n}`);
     assert.ok(conta.acerto.fecha, `competição ${n}: o acerto não fecha`);
   }
+});
+
+/* ═════════ o prêmio de cada sócio, para o relatório mostrar ═══════════ */
+
+test("cada participação guarda quanto coube a ela do prêmio", () => {
+  const conta = C.calcular(competicao());
+  const lance = conta.apostas.find((a) => a.temSocios);
+  const porNome = {};
+  lance.participacoes.forEach((p) => (porNome[p.nome] = p));
+
+  // meio a meio: 500 do prêmio para cada um
+  assert.equal(porNome.Luiz.premioC, 50000);
+  assert.equal(porNome["João"].premioC, 50000);
+  assert.equal(
+    lance.participacoes.reduce((s, p) => s + p.premioC, 0),
+    lance.premioC,
+    "a soma das participações tem que fechar com o prêmio do lance"
+  );
+});
+
+test("com um sócio escolhido, o prêmio da participação vai todo para ele", () => {
+  const comp = competicao();
+  comp.apostas[0].recebedor = "João";
+  const conta = C.calcular(comp);
+  const lance = conta.apostas.find((a) => a.temSocios);
+  const porNome = {};
+  lance.participacoes.forEach((p) => (porNome[p.nome] = p));
+
+  assert.equal(porNome["João"].premioC, 100000, "o escolhido leva o prêmio do lance");
+  assert.equal(porNome.Luiz.premioC, 0, "e quem só bancou não leva prêmio nenhum");
+  // e a cota acompanha: quem leva o prêmio responde pelo lance
+  assert.equal(porNome["João"].cotaC, 50000);
+  assert.equal(porNome.Luiz.cotaC, 0);
+  assert.equal(porNome.Luiz.pagoC, 50000, "mas o dinheiro que ele pôs continua registrado");
+});
+
+test("lance sem sócios também guarda o prêmio na participação", () => {
+  const conta = C.calcular(competicao());
+  const semSocios = conta.apostas.find((a) => !a.temSocios);
+  assert.equal(semSocios.participacoes.length, 1);
+  assert.equal(semSocios.participacoes[0].premioC, semSocios.premioC);
+});
+
+test("o prêmio da participação fecha com o bolo em qualquer arranjo", () => {
+  [null, "cotas", "pagador"].forEach((modo) => {
+    ["João", "Luiz", null].forEach((quem) => {
+      const comp = competicao();
+      if (modo) comp.apostas[0].premio = modo;
+      if (quem) comp.apostas[0].recebedor = quem;
+      const conta = C.calcular(comp);
+      const soma = conta.apostas.reduce(
+        (s, a) => s + a.participacoes.reduce((t, p) => t + p.premioC, 0),
+        0
+      );
+      assert.equal(
+        soma,
+        conta.totais.premiosC,
+        `não fechou com modo=${modo} e recebedor=${quem}`
+      );
+      assert.ok(conta.fecha);
+    });
+  });
 });
