@@ -288,3 +288,80 @@ test("a folha em branco também gera um PDF válido", () => {
   });
   conferirEstrutura(doc.bytes());
 });
+
+/* ══════════ o que o leilão de verdade do clube trouxe à tona ═════════ */
+
+test("percentual quebrado sai legível, e não com 15 casas decimais", () => {
+  // dividir 50% entre seis colocações dá 8,333333333333334 em ponto flutuante
+  const seis = ["Rui", "Kiko", "Tito", "Vera", "Ana", "Bruno"];
+  const s = texto(
+    Pdf.relatorio(
+      comp({
+        regra: { premios: [50].concat(seis.map(() => 50 / 6)) },
+        resultado: ["Zé"].concat(seis),
+      })
+    )
+  );
+  assert.ok(s.includes("8,3333%"), "não arredondou o percentual para exibir");
+  assert.ok(!s.includes("8,33333333"), "vazou o número cheio do ponto flutuante");
+});
+
+test("percentual quebrado não faz o bolo perder centavo", () => {
+  const seis = ["Rui", "Kiko", "Tito", "Vera", "Ana", "Bruno"];
+  const conta = C.calcular(
+    comp({
+      regra: { premios: [50].concat(seis.map(() => 50 / 6)) },
+      resultado: ["Zé"].concat(seis),
+      apostas: ["Zé"].concat(seis).map((atirador, i) => ({
+        id: "x" + i,
+        atirador,
+        apostador: "Dono " + i,
+        valor: 1000,
+        pago: true,
+      })),
+    })
+  );
+  // 1º leva metade exata; as seis faixas dividem a outra metade
+  assert.equal(conta.faixas[0].valorC, conta.pote / 2);
+  assert.equal(conta.totais.premiosC, conta.pote);
+});
+
+test("lance rachado mostra a cota de cada sócio, não só quem bancou", () => {
+  const s = texto(
+    Pdf.relatorio(
+      comp({
+        apostas: [
+          {
+            id: "a1",
+            atirador: "Zé",
+            apostador: "Ana",
+            valor: 500,
+            socios: [
+              { nome: "Ana", cota: 1, pagou: 500 },
+              { nome: "João", cota: 1, pagou: 0 },
+            ],
+          },
+        ],
+      })
+    )
+  );
+  assert.ok(s.includes("(lance rachado)"), "não marcou o lance como rachado");
+  assert.ok(s.includes("(João)"), "o sócio que não pôs dinheiro sumiu da lista");
+  assert.ok(s.includes("nada"), "não disse que o sócio não pôs nada");
+});
+
+test("quem está quite não conta como acerto em aberto", () => {
+  // Davi apostou 100 e ganhou 100: saldo zero, nada a fazer com ele
+  const c = comp({
+    resultado: ["Zé"],
+    regra: { premios: [100] },
+    apostas: [
+      { id: "a1", atirador: "Zé", apostador: "Ana", valor: 100, pago: true },
+      { id: "a2", atirador: "Rui", apostador: "Davi", valor: 100, pago: true },
+    ],
+  });
+  const conta = C.calcular(c);
+  assert.equal(conta.apostadores.find((p) => p.nome === "Davi").saldoC, 0);
+  const s = texto(Pdf.relatorio(c));
+  assert.ok(s.includes("1 acerto\\(s\\) em aberto"), "contou quem já está quite");
+});

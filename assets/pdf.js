@@ -520,7 +520,7 @@
 
     doc.paragrafo(
       "Divisão do bolo: " +
-        regra.premios.map((p, i) => `${C.rotuloPosicao(i)} ${String(p).replace(".", ",")}%`).join("  ·  ") +
+        regra.premios.map((p, i) => `${C.rotuloPosicao(i)} ${C.pct(p)}%`).join("  ·  ") +
         "   |   Rateio " +
         (regra.rateio === "igual" ? "em partes iguais entre os apostadores" : "proporcional ao valor apostado"),
       { cor: [0.42, 0.45, 0.4], tam: 9 }
@@ -544,13 +544,13 @@
             posicao,
             f.atirador,
             f.repetida ? "já premiado acima" : "ninguém apostou nele",
-            String(f.pct).replace(".", ",") + "%",
+            C.pct(f.pct) + "%",
             fmt(0),
           ]);
           destaques.push(false);
           return;
         }
-        linhas.push([posicao, f.atirador, "", String(f.pct).replace(".", ",") + "%", fmt(f.valorC)]);
+        linhas.push([posicao, f.atirador, "", C.pct(f.pct) + "%", fmt(f.valorC)]);
         destaques.push(true);
         f.apostadores.forEach((p) => {
           linhas.push(["", "", p.nome, "", fmt(p.premioC)]);
@@ -596,7 +596,7 @@
         p.premioC ? fmt(p.premioC) : "-",
         fmt(p.saldoC),
         p.foraDoCaixa
-          ? "acerta com o socio"
+          ? "acerta com o sócio"
           : p.acertado
           ? "acertado"
           : p.saldoC > 0
@@ -609,7 +609,8 @@
       destaques: conta.apostadores.map((p) => !p.acertado && p.saldoC < 0),
     });
 
-    const abertos = conta.apostadores.filter((p) => !p.acertado);
+    // quem ainda precisa mover dinheiro: quem está quite não é acerto pendente
+    const abertos = conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0);
     doc.paragrafo(
       `O clube paga R$ ${fmt(conta.totais.aPagarC)}  ·  o clube recebe R$ ${fmt(
         conta.totais.aReceberC
@@ -630,6 +631,32 @@
       doc.espaco(10);
       doc.titulo("Apostas lançadas");
       const c1 = larg * 0.26, c2 = larg * 0.26, c3 = 70;
+
+      // um lance rachado ganha uma linha por sócio logo abaixo: sem isso o
+      // relatório mostraria só quem bancou, e o sócio sumiria da lista
+      const linhasApostas = { linhas: [], destaques: [] };
+      conta.apostas.forEach((a) => {
+        linhasApostas.linhas.push([
+          a.atirador,
+          a.temSocios ? "lance rachado" : a.apostador,
+          fmt(a.valorC),
+          a.premioC ? fmt(a.premioC) : "-",
+          a.pago ? "pago" : a.parcial ? "em parte" : "em aberto",
+        ]);
+        linhasApostas.destaques.push(!a.pago);
+        if (!a.temSocios) return;
+        a.participacoes.forEach((p) => {
+          linhasApostas.linhas.push([
+            "",
+            p.nome,
+            fmt(p.cotaC),
+            "",
+            p.pagoC ? "pôs " + fmt(p.pagoC) : "não pôs nada",
+          ]);
+          linhasApostas.destaques.push(false);
+        });
+      });
+
       doc.tabela({
         colunas: [
           { titulo: "Atirador", largura: c1 },
@@ -638,15 +665,15 @@
           { titulo: "Prêmio R$", largura: (larg - c1 - c2 - c3) / 2, dir: true },
           { titulo: "Pagamento", largura: c3 },
         ],
-        linhas: conta.apostas.map((a) => [
-          a.atirador,
-          a.apostador,
-          fmt(a.valorC),
-          a.premioC ? fmt(a.premioC) : "-",
-          a.pago ? "pago" : "em aberto",
-        ]),
-        destaques: conta.apostas.map((a) => !a.pago),
+        linhas: linhasApostas.linhas,
+        destaques: linhasApostas.destaques,
       });
+      if (conta.totais.nSocios)
+        doc.paragrafo(
+          "Nos lances rachados, a linha do lance é o total; abaixo dela vem a cota de cada sócio e " +
+            "quanto cada um pôs. Quem bancou a parte do outro recebe essa diferença de volta no acerto.",
+          { cor: [0.42, 0.45, 0.4], tam: 8.5 }
+        );
     }
 
     return doc.bytes();

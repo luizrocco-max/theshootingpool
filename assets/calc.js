@@ -77,6 +77,18 @@
     return (n < 0 ? "-R$ " : "R$ ") + s.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   }
 
+  /**
+   * Percentual → texto curto: "50", "8,3333", "12,5".
+   * Dividir 50% igualmente entre seis colocações dá 8,333333333333334 — o
+   * número exato da conta, mas ilegível num relatório. Aqui ele vira
+   * "8,3333"; a conta continua sendo feita com o valor cheio.
+   */
+  function pct(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return "0";
+    return String(Math.round(v * 1e4) / 1e4).replace(".", ",");
+  }
+
   /** Texto digitado ("1.234,56", "1234.56", "50", "R$ 50") → centavos. */
   function parseValor(txt) {
     if (typeof txt === "number") return cent(txt);
@@ -762,6 +774,7 @@
     cent,
     reais,
     fmt,
+    pct,
     parseValor,
     norm,
     chave,

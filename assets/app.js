@@ -188,7 +188,7 @@
       "Apostas do clube · " +
       (c
         ? C.regraDe(c)
-            .premios.map((p, i) => `${String(p).replace(".", ",")}% para o ${C.rotuloPosicao(i)}`)
+            .premios.map((p, i) => `${C.pct(p)}% para o ${C.rotuloPosicao(i)}`)
             .join(" · ")
         : "de tiro");
 
@@ -333,7 +333,7 @@
     }
     nota.className = "somapct" + (fecha ? "" : " alerta100");
     nota.innerHTML =
-      `Soma dos percentuais: <b>${esc(String(Math.round(soma * 100) / 100).replace(".", ","))}%</b>` +
+      `Soma dos percentuais: <b>${esc(C.pct(soma))}%</b>` +
       (fecha ? "" : " — não fecha 100%, mas tudo bem: o bolo é dividido nessa mesma proporção.");
   }
 
@@ -348,7 +348,7 @@
             <input id="fPodio${i}" list="dlAtiradores" placeholder="Nome do atirador"
                    value="${esc((c.resultado || [])[i] || "")}">
             <input id="fPct${i}" class="pctbox" inputmode="decimal" title="% do bolo desta colocação"
-                   value="${esc(String(pct).replace(".", ","))}">
+                   value="${esc(C.pct(pct))}">
           </div>
         </div>`
       )
@@ -409,8 +409,8 @@
                   .map((p) => `<li><span>${esc(p.nome)}</span><span>${esc(fmt(p.premioC))}</span></li>`)
                   .join("")}</ul>`;
             const pctReal = f.ativa && Math.abs(f.pctEfetivo - f.pct) > 0.01
-              ? `${f.pct}% → ${f.pctEfetivo.toFixed(1)}%`
-              : `${f.pct}%`;
+              ? `${C.pct(f.pct)}% → ${f.pctEfetivo.toFixed(1).replace(".", ",")}%`
+              : `${C.pct(f.pct)}%`;
             return `<div class="pod g${i + 1}">
               <span class="pct">${esc(pctReal)}</span>
               <div class="medal">${medalha(i)} <span style="font-size:13px;color:var(--muted);font-weight:700">${esc(C.rotuloPosicao(i))}</span></div>
@@ -780,7 +780,7 @@
           .join("")}
       </div>
       <div class="hint" style="margin-bottom:16px">Hoje: <b>${esc(
-        r.premios.map((x, i) => C.rotuloPosicao(i) + " " + String(x).replace(".", ",") + "%").join(" · ")
+        r.premios.map((x, i) => C.rotuloPosicao(i) + " " + C.pct(x) + "%").join(" · ")
       )}</b>. Estes são atalhos — para um valor qualquer, edite direto na aba 🏆 Resultado, onde dá
         para acrescentar ou tirar colocações.</div>
       <div class="formgrid" style="grid-template-columns:repeat(3,1fr);margin-top:12px">
@@ -1628,7 +1628,12 @@
       const campoNome = $("fPodio" + i);
       const campoPct = $("fPct" + i);
       resultado.push(campoNome ? C.norm(campoNome.value) : (c.resultado || [])[i] || "");
-      const v = campoPct ? parseFloat(String(campoPct.value).replace(",", ".")) : pct;
+      // O campo mostra o percentual arredondado (8,3333 e não 8,333333…).
+      // Se o texto continua sendo esse arredondamento, ninguém mexeu: vale o
+      // valor cheio que já estava gravado, senão a divisão perderia um centavo.
+      const texto = campoPct ? String(campoPct.value).trim() : "";
+      if (campoPct && texto === C.pct(pct)) return premios.push(pct);
+      const v = campoPct ? parseFloat(texto.replace(",", ".")) : pct;
       premios.push(Number.isFinite(v) && v >= 0 ? v : pct);
     });
     c.resultado = resultado;
