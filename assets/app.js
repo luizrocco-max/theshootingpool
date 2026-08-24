@@ -283,10 +283,21 @@
             const dono = a.temSocios
               ? a.participacoes.map((p) => p.nome).join(" + ")
               : a.apostador;
+            // quem pôs o lance inteiro sozinho bancou a parte dos outros
+            const bancou =
+              a.temSocios && a.valorC > 0
+                ? a.participacoes.find((p) => p.pagoC >= a.valorC)
+                : null;
             const pagamento = a.temSocios
               ? `<button class="tag ${a.pago ? "ok" : a.parcial ? "mut" : "no"}" data-act="socios"
                     data-id="${esc(a.id)}" title="Ver os sócios">${
-                  a.pago ? "✓ pago" : a.parcial ? "◐ " + esc(fmt(a.pagoC)) + " de " + esc(fmt(a.valorC)) : "✗ não pagou"
+                  bancou
+                    ? "✓ " + esc(bancou.nome) + " bancou"
+                    : a.pago
+                    ? "✓ pago"
+                    : a.parcial
+                    ? "◐ " + esc(fmt(a.pagoC)) + " de " + esc(fmt(a.valorC))
+                    : "✗ não pagou"
                 }</button>`
               : `<button class="tag ${a.pago ? "ok" : "no"}" data-act="pago" data-id="${esc(a.id)}">${
                   a.pago ? "✓ pago" : "✗ não pagou"
@@ -983,15 +994,24 @@
 
     const valorC = C.cent(a.valor);
     const existentes = Array.isArray(a.socios) && a.socios.length ? a.socios : null;
+    const emReais = (centavos) => (centavos / 100).toFixed(2).replace(".", ",");
+    // as cotas em dinheiro, calculadas do mesmo jeito que o motor calcula
+    const pesos = (existentes || []).map((s) => Math.max(0, Number(s.cota) || 0));
+    const cotasC = existentes
+      ? C.distribuir(valorC, pesos.some((p) => p > 0) ? pesos : existentes.map(() => 1))
+      : [];
     const linhas = existentes
-      ? existentes.map((s) => ({
+      ? existentes.map((s, i) => ({
           nome: s.nome,
           cota: s.cota === undefined ? 1 : s.cota,
-          pagouTexto: s.pagou === true ? C.reais(0) : s.pagou ? String(C.reais(C.cent(s.pagou))).replace(".", ",") : "",
+          // pagou === true quer dizer "pagou a própria cota" — é assim que a
+          // planilha grava um "sim". Mostrar 0 aqui apagaria o pagamento na
+          // primeira vez que alguém abrisse e salvasse o lance.
+          pagouTexto: s.pagou === true ? emReais(cotasC[i]) : s.pagou ? emReais(C.cent(s.pagou)) : "",
         }))
       : [
           // primeira vez: quem lançou entra com tudo, do jeito que já estava
-          { nome: a.apostador, cota: 1, pagouTexto: a.pago ? String(C.reais(valorC)).replace(".", ",") : "" },
+          { nome: a.apostador, cota: 1, pagouTexto: a.pago ? emReais(valorC) : "" },
           { nome: "", cota: 1, pagouTexto: "" },
         ];
 
