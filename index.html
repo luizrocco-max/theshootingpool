@@ -138,6 +138,23 @@
   button.tag{cursor:pointer}
   button.tag:hover{filter:brightness(1.25)}
   .pos{font-weight:800;font-size:12px;color:var(--muted)}
+
+  /* o "?" que explica cada coluna e cada marca, e o balão que ele abre */
+  /* NÃO usar ".ajuda": já é a classe do card da aba de ajuda (.card.ajuda) */
+  .ajudabtn{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+    margin-left:5px;border-radius:50%;border:1px solid var(--line);background:var(--panel2);
+    color:var(--muted);font-size:10px;font-weight:800;cursor:pointer;vertical-align:middle;
+    line-height:1;padding:0;flex:0 0 auto}
+  .ajudabtn:hover{border-color:var(--accent2);color:var(--accent2)}
+  .ajudabtn:focus-visible{outline:2px solid var(--accent2);outline-offset:1px}
+  @media print{.ajudabtn{display:none}}
+  .balao{position:absolute;z-index:60;max-width:320px;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:12.5px;
+    line-height:1.6;color:var(--txt);box-shadow:0 12px 34px rgba(0,0,0,.6);font-weight:400;
+    text-align:left;text-transform:none;letter-spacing:normal}
+  .balao b{color:var(--accent2)}
+  .balao .tit{font-weight:800;margin-bottom:5px;font-size:13px}
+  .balao .ex{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--muted)}
   .chip{background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:999px;
     padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;margin:0 6px 6px 0;transition:.12s}
   .chip:hover{border-color:var(--accent2);color:var(--txt)}
