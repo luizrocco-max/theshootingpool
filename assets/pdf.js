@@ -595,7 +595,15 @@
         p.devendoC ? fmt(p.devendoC) : "-",
         p.premioC ? fmt(p.premioC) : "-",
         fmt(p.saldoC),
-        p.acertado ? "acertado" : p.saldoC > 0 ? "clube paga" : p.saldoC < 0 ? "ele paga" : "quite",
+        p.foraDoCaixa
+          ? "acerta com o socio"
+          : p.acertado
+          ? "acertado"
+          : p.saldoC > 0
+          ? "clube paga"
+          : p.saldoC < 0
+          ? "ele paga"
+          : "quite",
       ]),
       // marca quem o clube tem de cobrar — é o que exige providência
       destaques: conta.apostadores.map((p) => !p.acertado && p.saldoC < 0),

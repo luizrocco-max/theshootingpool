@@ -10,7 +10,9 @@
      • Dentro de cada faixa o dinheiro é dividido entre os apostadores daquele
        atirador — proporcional ao valor apostado (padrão) ou em partes iguais.
      • Quem não pagou a aposta e ganhou prêmio tem o valor abatido: o acerto é
-       sempre líquido (saldo = prêmio − o que ele ainda deve).
+       sempre líquido (saldo = prêmio − a cota dele + o que ele pôs).
+     • Um lance pode ser rachado entre sócios, com um deles bancando o valor
+       inteiro: quem adiantou recebe a diferença de volta no acerto.
 
    Todo dinheiro circula aqui em CENTAVOS (número inteiro) para nunca dar
    diferença de arredondamento. A soma dos prêmios sempre fecha com o bolo.
@@ -32,6 +34,9 @@
     rateio: "proporcional", // "proporcional" (por valor apostado) | "igual"
     sobra: "redistribuir", // faixa sem apostador: "redistribuir" | "clube"
     taxaClube: 0, // % do bolo retido pelo clube antes da divisão
+    // lance com sócios: divide o prêmio pelas cotas de cada um ("cotas") ou
+    // entrega tudo a quem bancou o lance ("pagador")
+    socios: "cotas",
   };
 
   function regraDe(comp) {
@@ -42,6 +47,7 @@
     r.premios = p.length ? p : REGRA_PADRAO.premios.slice();
     r.rateio = r.rateio === "igual" ? "igual" : "proporcional";
     r.sobra = r.sobra === "clube" ? "clube" : "redistribuir";
+    r.socios = r.socios === "pagador" ? "pagador" : "cotas";
     r.taxaClube = Math.min(100, Math.max(0, Number(r.taxaClube) || 0));
     return r;
   }
@@ -137,19 +143,74 @@
 
   /* ──────────────────────────── apostas ──────────────────────────────── */
 
+  /**
+   * Quem está dentro de um lance e com quanto.
+   *
+   * Um lance pode ser de uma pessoa só (o caso comum) ou ter sócios: várias
+   * pessoas rachando o mesmo lance, com um deles podendo ter bancado o valor
+   * inteiro. Por isso cada participação guarda duas coisas diferentes:
+   *   cotaC  — quanto daquele lance é dela (a parte que ela deve)
+   *   pagoC  — quanto ela efetivamente pôs do próprio bolso
+   * Quem bancou a parte do outro fica com pagoC maior que a cota, e recebe
+   * essa diferença de volta no acerto.
+   */
+  function participacoesDe(a, valorC, modoPadrao) {
+    const socios = (Array.isArray(a.socios) ? a.socios : []).filter((s) => s && norm(s.nome));
+
+    if (!socios.length) {
+      const nome = norm(a.apostador);
+      if (!nome) return []; // lance sem dono: a linha é descartada
+      return [{ nome, chave: chave(nome), cotaC: valorC, pagoC: a.pago ? valorC : 0 }];
+    }
+
+    const pesos = socios.map((s) => Math.max(0, Number(s.cota) || 0));
+    const cotas = distribuir(valorC, pesos.some((p) => p > 0) ? pesos : socios.map(() => 1));
+
+    let restante = valorC; // o clube nunca recebe mais do que o lance vale
+    const partes = socios.map((s, i) => {
+      const bruto = s.pagou === true ? cotas[i] : Math.max(0, cent(s.pagou));
+      const pagoC = Math.min(bruto, restante);
+      restante -= pagoC;
+      const nome = norm(s.nome);
+      return { nome, chave: chave(nome), cotaC: cotas[i], pagoC };
+    });
+
+    // No modo "prêmio para quem pagou", o lance quitado passa a ser de quem
+    // bancou: ele responde pelo valor todo e leva o prêmio todo. Quem não pôs
+    // dinheiro sai das contas do clube e acerta com o sócio por fora.
+    // Se o lance ainda não foi quitado, as cotas continuam valendo — a dívida
+    // com o clube é de todos.
+    const modo = a.premio || modoPadrao;
+    const totalPago = partes.reduce((s, p) => s + p.pagoC, 0);
+    if (modo === "pagador" && totalPago === valorC)
+      partes.forEach((p) => { p.cotaC = p.pagoC; });
+
+    return partes;
+  }
+
   /** Normaliza a lista de apostas e descarta linhas incompletas. */
-  function apostasDe(comp) {
+  function apostasDe(comp, regra) {
     return ((comp && comp.apostas) || [])
-      .map((a, i) => ({
-        id: a.id || "a" + i,
-        atirador: norm(a.atirador),
-        apostador: norm(a.apostador),
-        valorC: cent(a.valor),
-        pago: !!a.pago,
-        pagoAuto: !!a.pagoAuto,
-        ordem: i,
-      }))
-      .filter((a) => a.valorC > 0 && a.atirador && a.apostador);
+      .map((a, i) => {
+        const valorC = cent(a.valor);
+        const participacoes = participacoesDe(a, valorC, (regra || {}).socios);
+        const pagoC = participacoes.reduce((s, p) => s + p.pagoC, 0);
+        return {
+          id: a.id || "a" + i,
+          atirador: norm(a.atirador),
+          apostador: norm(a.apostador) || (participacoes[0] || {}).nome || "",
+          valorC,
+          participacoes,
+          pagoC,
+          pago: valorC > 0 && pagoC >= valorC,
+          parcial: pagoC > 0 && pagoC < valorC,
+          temSocios: participacoes.length > 1,
+          premio: a.premio === "pagador" || a.premio === "cotas" ? a.premio : null,
+          pagoAuto: !!a.pagoAuto,
+          ordem: i,
+        };
+      })
+      .filter((a) => a.valorC > 0 && a.atirador && a.participacoes.length);
   }
 
   function agrupar(itens, fn) {
@@ -174,7 +235,7 @@
    */
   function calcular(comp) {
     const regra = regraDe(comp);
-    const apostas = apostasDe(comp);
+    const apostas = apostasDe(comp, regra);
     const acertos = (comp && comp.acertos) || {};
     const alertas = [];
 
@@ -249,55 +310,88 @@
 
     // ── divisão dentro de cada faixa ────────────────────────────────────
     const premioPorAposta = new Map();
+    const premioPorPessoa = new Map(); // chave → centavos
+    const somaPremio = (chaveP, valor) =>
+      premioPorPessoa.set(chaveP, (premioPorPessoa.get(chaveP) || 0) + valor);
+
     ativas.forEach((f) => {
-      const grupos = [...agrupar(f.apostas, (a) => chave(a.apostador)).values()];
-      const pesos = grupos.map((g) =>
-        regra.rateio === "igual" ? 1 : g.reduce((s, a) => s + a.valorC, 0)
+      // uma entrada por pessoa dentro de cada lance da faixa
+      const partes = [];
+      f.apostas.forEach((a) =>
+        a.participacoes.forEach((p) => partes.push({ aposta: a, p, peso: p.cotaC }))
       );
-      const valores = distribuir(f.valorC, pesos);
-      grupos.forEach((g, i) => {
-        const apostadoC = g.reduce((s, a) => s + a.valorC, 0);
-        f.apostadores.push({
-          nome: g[0].apostador,
-          chave: chave(g[0].apostador),
-          apostadoC,
-          premioC: valores[i],
+
+      let valores;
+      if (regra.rateio === "igual") {
+        // partes iguais entre as pessoas da faixa, não entre os lances
+        const porPessoa = [...agrupar(partes, (x) => x.p.chave).values()];
+        const fatias = distribuir(f.valorC, porPessoa.map(() => 1));
+        valores = new Array(partes.length).fill(0);
+        porPessoa.forEach((grupo, i) => {
+          // se a pessoa está em mais de um lance da faixa, divide pela cota
+          const dentro = distribuir(fatias[i], grupo.map((x) => x.peso));
+          grupo.forEach((x, k) => (valores[partes.indexOf(x)] = dentro[k]));
         });
-        // reparte o prêmio do apostador entre as apostas dele nessa faixa
-        const porAposta = distribuir(valores[i], g.map((a) => a.valorC));
-        g.forEach((a, k) => premioPorAposta.set(a.ordem, porAposta[k]));
+      } else {
+        valores = distribuir(f.valorC, partes.map((x) => x.peso));
+      }
+
+      const porPessoaFaixa = new Map();
+      partes.forEach((x, i) => {
+        const premio = valores[i];
+        premioPorAposta.set(x.aposta.ordem, (premioPorAposta.get(x.aposta.ordem) || 0) + premio);
+        somaPremio(x.p.chave, premio);
+        if (!porPessoaFaixa.has(x.p.chave))
+          porPessoaFaixa.set(x.p.chave, { nome: x.p.nome, chave: x.p.chave, apostadoC: 0, premioC: 0 });
+        const alvo = porPessoaFaixa.get(x.p.chave);
+        alvo.apostadoC += x.p.cotaC;
+        alvo.premioC += premio;
       });
-      f.apostadores.sort((a, b) => b.premioC - a.premioC || a.nome.localeCompare(b.nome, "pt-BR"));
+      f.apostadores = [...porPessoaFaixa.values()].sort(
+        (a, b) => b.premioC - a.premioC || a.nome.localeCompare(b.nome, "pt-BR")
+      );
     });
 
-    // ── acerto de contas, por apostador ─────────────────────────────────
+    // ── acerto de contas, por pessoa ────────────────────────────────────
     const porApostador = new Map();
     apostas.forEach((a) => {
-      const k = chave(a.apostador);
-      if (!porApostador.has(k))
-        porApostador.set(k, {
-          nome: a.apostador,
-          chave: k,
-          apostadoC: 0,
-          pagoC: 0,
-          devendoC: 0,
-          premioC: 0,
-          apostas: [],
-          acertado: !!acertos[k],
-          acertadoEm: acertos[k] && acertos[k].em ? acertos[k].em : null,
-        });
-      const p = porApostador.get(k);
-      const premioC = premioPorAposta.get(a.ordem) || 0;
-      p.apostadoC += a.valorC;
-      if (a.pago) p.pagoC += a.valorC;
-      else p.devendoC += a.valorC;
-      p.premioC += premioC;
-      p.apostas.push(Object.assign({ premioC }, a));
+      a.participacoes.forEach((part) => {
+        const k = part.chave;
+        if (!porApostador.has(k))
+          porApostador.set(k, {
+            nome: part.nome,
+            chave: k,
+            apostadoC: 0, // a soma das cotas: o que é dela nos lances
+            pagoC: 0, // o que ela pôs do bolso
+            devendoC: 0, // cota que ainda não pagou
+            adiantadoC: 0, // o que pagou além da própria cota
+            premioC: 0,
+            apostas: [],
+            acertado: !!acertos[k],
+            acertadoEm: acertos[k] && acertos[k].em ? acertos[k].em : null,
+          });
+        const p = porApostador.get(k);
+        p.apostadoC += part.cotaC;
+        p.pagoC += part.pagoC;
+        p.apostas.push(
+          Object.assign({ cotaC: part.cotaC, pagoPelaPessoaC: part.pagoC }, a, {
+            premioC: premioPorAposta.get(a.ordem) || 0,
+          })
+        );
+      });
     });
 
     const apostadores = [...porApostador.values()].map((p) => {
-      p.saldoC = p.premioC - p.devendoC; // + clube paga · − apostador paga
+      p.premioC = premioPorPessoa.get(p.chave) || 0;
+      const diferenca = p.apostadoC - p.pagoC;
+      p.devendoC = Math.max(0, diferenca); // ainda deve
+      p.adiantadoC = Math.max(0, -diferenca); // bancou pelos sócios
+      // + o clube (ou outro apostador) paga a ela · − ela paga
+      p.saldoC = p.premioC - p.apostadoC + p.pagoC;
       p.lucroC = p.premioC - p.apostadoC; // resultado da aposta em si
+      // sócio de um lance que foi para quem bancou: não entra nas contas do
+      // clube, acerta direto com quem pagou
+      p.foraDoCaixa = p.apostas.length > 0 && p.apostadoC === 0 && p.pagoC === 0;
       return p;
     });
     apostadores.sort(
@@ -311,7 +405,9 @@
       apostadoC: pote,
       pagoC: soma((p) => p.pagoC),
       devendoC: soma((p) => p.devendoC),
+      adiantadoC: soma((p) => p.adiantadoC),
       premiosC: soma((p) => p.premioC),
+      nSocios: apostas.filter((a) => a.temSocios).length,
       aPagarC: abertos.reduce((s, p) => s + Math.max(0, p.saldoC), 0),
       aReceberC: abertos.reduce((s, p) => s + Math.max(0, -p.saldoC), 0),
       nApostas: apostas.length,
@@ -449,7 +545,7 @@
    */
   function simular(comp) {
     const regra = regraDe(comp);
-    const apostas = apostasDe(comp);
+    const apostas = apostasDe(comp, regra);
     const pote = apostas.reduce((s, a) => s + a.valorC, 0);
     const poteLiquidoC = pote - Math.floor((pote * regra.taxaClube) / 100);
     const pctTotal = regra.premios.reduce((a, b) => a + b, 0) || 100;

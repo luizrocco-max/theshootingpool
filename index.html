@@ -88,6 +88,17 @@
   @media(max-width:700px){.podium{grid-template-columns:1fr}}
   #podioInputs{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
   .colocacao{display:flex;gap:8px;align-items:center}
+  /* linha de sócio: nome, cota e quanto ele pôs */
+  .socio{display:grid;grid-template-columns:1fr 62px 92px auto;gap:7px;align-items:center;margin-bottom:8px}
+  .socio input{padding:8px 9px;font-size:13px}
+  .socio .cota,.socio .pagou{text-align:right}
+  .socio .tirar{background:transparent;border:1px solid var(--line);color:var(--muted);
+    border-radius:7px;padding:7px 9px;cursor:pointer;font-size:12px}
+  .socio .tirar:hover{border-color:var(--bad);color:var(--bad)}
+  .sociocab{display:grid;grid-template-columns:1fr 62px 92px auto;gap:7px;margin-bottom:5px}
+  .sociocab span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+  .sociocab span:nth-child(2),.sociocab span:nth-child(3){text-align:right}
+  @media(max-width:480px){.socio,.sociocab{grid-template-columns:1fr 52px 78px auto}}
   .colocacao .pctbox{width:82px;flex:none;text-align:right}
   .somapct{font-size:12px;color:var(--muted);margin-top:10px}
   .somapct b{color:var(--txt)}
@@ -407,6 +418,21 @@
         <li>Use a aba <b>Acerto de contas</b> para pagar e cobrar — e marque cada um como acertado.</li>
       </ol>
 
+      <h4>Lance rachado entre sócios</h4>
+      <p>O botão <b>👥</b> na linha do lance abre os sócios. Cada um tem duas coisas separadas:
+        a <b>cota</b> (quanto daquele lance é dele) e o <b>pagou</b> (quanto pôs do próprio bolso).
+        Quem bancou a parte do outro recebe a diferença de volta no acerto.</p>
+      <div class="exemplo">
+        Luiz e João racham meio a meio um lance de <b>R$ 500</b>, mas quem entregou os R$ 500 foi
+        o Luiz. O atirador vence e a faixa paga <b>R$ 1.000</b>.<br><br>
+        <b>Dividindo entre os sócios:</b> Luiz leva <b>R$ 750</b> (500 do prêmio + 250 que
+        adiantou) e João leva <b>R$ 250</b> (500 do prêmio − 250 da cota dele).<br>
+        <b>Tudo para quem bancou:</b> Luiz leva os <b>R$ 1.000</b> e acerta com o João por fora.
+      </div>
+      <p>Dá para escolher o modo em cada lance, no próprio 👥, ou de uma vez para a competição
+        toda nos Ajustes, no fim desta página. Deixando as cotas todas em <code>1</code>, o lance
+        racha em partes iguais.</p>
+
       <h4>Quem paga quem</h4>
       <p>Na aba 🤝 Acerto de contas, embaixo da tabela, o sistema monta a lista de pagamentos
         que quita todo mundo com o <b>menor número de transferências</b>. Em vez de cada um
@@ -490,6 +516,34 @@
       <button class="btn ghost" data-fechar="modalComp">Cancelar</button>
     </div>
     <div class="msg" id="msgComp"></div>
+  </div>
+</div>
+
+<!-- modal: sócios do lance -->
+<div class="overlay" id="modalSocios" hidden>
+  <div class="modal">
+    <span class="close" data-fechar="modalSocios">✕</span>
+    <h2>👥 Sócios do lance</h2>
+    <p class="hint" id="socioContexto"></p>
+
+    <div id="listaSocios"></div>
+    <button class="btn ghost mini" id="btnAddSocio" style="margin-top:10px">+ adicionar sócio</button>
+
+    <div class="hint" id="socioResumo" style="margin-top:12px"></div>
+
+    <label class="lb" for="socioModo" style="margin-top:16px">Quem leva o prêmio</label>
+    <select id="socioModo">
+      <option value="">Como está nos ajustes da competição</option>
+      <option value="cotas">Dividir entre os sócios, pela cota de cada um</option>
+      <option value="pagador">Tudo para quem bancou o lance</option>
+    </select>
+    <div class="hint" id="socioModoNota"></div>
+
+    <div class="row">
+      <button class="btn" id="btnSalvarSocios">Salvar</button>
+      <button class="btn ghost" id="btnTirarSocios">Tirar os sócios</button>
+    </div>
+    <div class="msg" id="msgSocios"></div>
   </div>
 </div>
 

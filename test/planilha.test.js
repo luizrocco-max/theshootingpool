@@ -23,6 +23,18 @@ test("o modelo entregue ao clube é importável de volta", () => {
   const bruno = conta.apostadores.find((p) => p.chave === "BRUNO");
   assert.equal(bruno.premioC, 41250);
   assert.equal(bruno.saldoC, 41250 - 30000); // não tinha pago os R$ 300
+
+  // o modelo também mostra um lance rachado: Carla e Luiz no Rui, ela bancou
+  const lanceRui = c.apostas.find((a) => a.atirador === "Rui");
+  assert.equal(lanceRui.socios.length, 2);
+  const carla = conta.apostadores.find((p) => p.chave === "CARLA");
+  const luiz = conta.apostadores.find((p) => p.chave === "LUIZ");
+  assert.equal(carla.apostadoC, 10000, "a cota dela é metade do lance");
+  assert.equal(carla.pagoC, 20000, "mas ela pôs os 200");
+  assert.equal(carla.premioC, 16500, "metade dos 30% do 2º lugar");
+  assert.equal(carla.saldoC, 16500 - 10000 + 20000, "recebe 265");
+  assert.equal(luiz.saldoC, 16500 - 10000, "e o Luiz, 65");
+  assert.ok(conta.fecha);
 });
 
 /* ═══════════════════════ tolerância na leitura ═══════════════════════ */
@@ -232,6 +244,86 @@ test("exportar e importar de volta preserva tudo que importa", () => {
   );
 });
 
+test("lance com sócios sobrevive à ida e volta pela planilha", () => {
+  const dados = {
+    competicoes: [
+      {
+        id: "c1",
+        nome: "Etapa do leilão",
+        data: "2026-08-15",
+        regra: { premios: [100] },
+        resultado: ["Atirador A"],
+        acertos: {},
+        apostas: [
+          {
+            id: "L1",
+            atirador: "Atirador A",
+            apostador: "Luiz",
+            valor: 500,
+            premio: "cotas",
+            socios: [
+              { nome: "Luiz", cota: 1, pagou: 500 },
+              { nome: "João", cota: 1, pagou: 0 },
+            ],
+          },
+          { id: "L2", atirador: "Atirador B", apostador: "Pedro", valor: 500, pago: true },
+        ],
+      },
+    ],
+  };
+
+  const volta = P.importar(P.exportar(dados)).competicoes[0];
+  const lance = volta.apostas.find((a) => a.atirador === "Atirador A");
+  assert.equal(lance.socios.length, 2, "os sócios voltaram");
+  assert.deepEqual(lance.socios.map((s) => s.nome), ["Luiz", "João"]);
+  assert.equal(lance.socios[0].pagou, 500, "e quem bancou o lance");
+  assert.equal(lance.socios[1].pagou, 0);
+  assert.equal(lance.premio, "cotas");
+
+  // e a conta dá o mesmo dos dois lados
+  const antes = C.calcular(dados.competicoes[0]);
+  const depois = C.calcular(volta);
+  assert.deepEqual(
+    antes.apostadores.map((p) => [p.nome, p.saldoC]).sort(),
+    depois.apostadores.map((p) => [p.nome, p.saldoC]).sort()
+  );
+  assert.equal(depois.apostadores.find((p) => p.chave === "LUIZ").saldoC, 75000);
+  assert.equal(depois.apostadores.find((p) => p.chave === "JOAO").saldoC, 25000);
+});
+
+test("aba de sócios escrita à mão, com cotas desiguais", () => {
+  const r = P.importar({
+    Apostas: [
+      ["COMPETICAO", "ATIRADOR", "APOSTADOR", "VALOR", "PAGO"],
+      ["Etapa", "Atirador A", "Luiz", 500, "sim"],
+    ],
+    Socios: [
+      ["COMPETICAO", "ATIRADOR", "SOCIO", "COTA", "PAGOU", "QUEM LEVA"],
+      ["Etapa", "Atirador A", "Luiz", 70, 500, "pagador"],
+      ["", "", "João", 30, 0, ""],
+    ],
+    Resultado: [["COMPETICAO", "COLOCACAO", "ATIRADOR", "PERCENTUAL"], ["Etapa", 1, "Atirador A", 100]],
+  });
+  const lance = r.competicoes[0].apostas[0];
+  assert.equal(lance.socios.length, 2);
+  assert.equal(lance.socios[0].cota, 70);
+  assert.equal(lance.premio, "pagador");
+  // no modo pagador, o Luiz bancou tudo e leva tudo
+  const conta = C.calcular(r.competicoes[0]);
+  assert.equal(conta.apostadores.find((p) => p.chave === "LUIZ").saldoC, 50000);
+});
+
+test("um sócio só na aba não vira lance rachado", () => {
+  const r = P.importar({
+    Apostas: [
+      ["COMPETICAO", "ATIRADOR", "APOSTADOR", "VALOR", "PAGO"],
+      ["Etapa", "Atirador A", "Luiz", 500, "sim"],
+    ],
+    Socios: [["COMPETICAO", "ATIRADOR", "SOCIO", "COTA", "PAGOU"], ["Etapa", "Atirador A", "Luiz", 1, 500]],
+  });
+  assert.equal(r.competicoes[0].apostas[0].socios, undefined, "menos de dois: fica como estava");
+});
+
 test("a exportação traz as abas de conferência", () => {
   const abas = P.exportar({
     competicoes: [
@@ -244,7 +336,9 @@ test("a exportação traz as abas de conferência", () => {
       },
     ],
   });
-  assert.deepEqual(Object.keys(abas), ["Apostas", "Resultado", "Ajustes", "Acerto", "Temporada", "Atiradores"]);
+  assert.deepEqual(Object.keys(abas), [
+    "Apostas", "Socios", "Resultado", "Ajustes", "Acerto", "Temporada", "Atiradores",
+  ]);
 
   const acerto = abas.Acerto;
   assert.equal(acerto[1][1], "Ana");

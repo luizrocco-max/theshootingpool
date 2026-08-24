@@ -79,6 +79,38 @@ são configuráveis **por competição** — e podem virar o padrão das próxim
 
 ---
 
+## Lance rachado entre sócios
+
+Um lance pode ser de duas ou mais pessoas, com **um deles bancando o valor
+inteiro**. Cada sócio tem duas coisas separadas:
+
+- a **cota** — quanto daquele lance é dele (a parte que ele deve);
+- o **pagou** — quanto ele pôs do próprio bolso.
+
+Quem bancou a parte do outro recebe a diferença de volta no acerto.
+
+> **O caso típico.** Luiz e João racham meio a meio um lance de **R$ 500** no
+> atirador A, mas quem entregou os R$ 500 foi o Luiz. O atirador A vence e a
+> faixa paga **R$ 1.000**.
+
+Daí saem dois jeitos de acertar, escolhidos em **👥** no próprio lance (ou nos
+ajustes, valendo para a competição toda):
+
+| Modo | O que acontece |
+| --- | --- |
+| **Dividir entre os sócios** (padrão) | Luiz recebe **R$ 750** (R$ 500 do prêmio + os R$ 250 que adiantou) e João recebe **R$ 250** (R$ 500 do prêmio − os R$ 250 da cota dele). Cada um já sai quite. |
+| **Tudo para quem bancou** | Luiz recebe os **R$ 1.000** sozinho e acerta com o João por fora. O João aparece no acerto como *acerta com o sócio*, sem entrar nas contas do clube. |
+
+O botão 👥 fica em cada linha da tabela de lances. Ao abrir, ele já traz quem
+lançou na primeira linha; é só acrescentar o sócio, ajustar a cota (tudo `1` =
+partes iguais) e escrever quanto cada um pôs. O resumo embaixo mostra ao vivo a
+cota de cada um em reais e quem adiantou ou ainda deve.
+
+Na planilha, isso vive na aba **`Socios`**: `COMPETICAO · ATIRADOR · SOCIO ·
+COTA · PAGOU · QUEM LEVA`, uma linha por pessoa, ligada ao lance pelo atirador.
+
+---
+
 ## Quem paga quem
 
 Acertar as contas passando tudo pelo caixa dá uma transferência por pessoa, em
