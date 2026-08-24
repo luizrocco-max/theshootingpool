@@ -277,6 +277,33 @@ offline**. É por isso que o app exige no mínimo 8 caracteres e avisa quando a
 senha é fraca. Use uma **frase**: `pratoquebrado no domingo` é fácil de lembrar,
 fácil de passar no grupo e inviável de adivinhar. Evite `clube123` e parentes.
 
+### A senha nunca fica no código
+
+O repositório é **público**. Se a senha estivesse escrita em algum arquivo,
+qualquer pessoa a leria no GitHub e — pior — usaria para **abrir o
+`data/apostas.json` publicado**, que é cifrado justamente com ela. Não some só
+a tela de login: some a criptografia inteira.
+
+Por isso a senha só existe em dois lugares: na cabeça de quem sabe, e derivada
+dentro do navegador na hora de abrir o arquivo. Há um teste que falha se um
+`data/apostas.json` em texto puro for commitado por engano.
+
+### Deixar a senha valendo desde o primeiro acesso
+
+Enquanto nada foi publicado, quem abre o site cai na tela de **criar senha** —
+e cada pessoa acaba com uma senha própria no aparelho dela, sem a trava
+conferir nada. Para evitar isso, semeie o cofre com um arquivo vazio já
+cifrado:
+
+```bash
+npm run cofre          # pergunta a senha sem exibir na tela
+```
+
+A partir daí todo mundo cai na tela de **entrar**, e só a senha do clube abre.
+O comando também serve para **trocar a senha** sem depender do publicador: rode
+de novo com a senha nova e suba o arquivo. (Passando a senha como argumento
+ela fica no histórico do terminal — prefira digitar quando for pedido.)
+
 ### Detalhes práticos
 
 - **Não há recuperação de senha.** Perdeu, perdeu — restaure de um backup.
@@ -368,6 +395,7 @@ test/pdf.test.js               # testes do PDF (estrutura, xref, acentuação)
 test/pagamentos.test.js        # testes do quem paga quem, contra a força bruta
 scripts/serve.js               # servidor local sem dependências (npm start)
 scripts/gerar-modelo.js        # regera o modelo (npm run modelo)
+scripts/semear-cofre.js        # semeia o cofre com a senha do clube (npm run cofre)
 cloudflare-worker.js           # publicador com senha (opcional)
 .nojekyll                      # serve o site sem processamento Jekyll
 ```

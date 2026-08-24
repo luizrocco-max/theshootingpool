@@ -1,6 +1,9 @@
 {
-  "versao": 1,
-  "atualizado_em": null,
-  "regraPadrao": null,
-  "competicoes": []
+  "cofre": 1,
+  "kdf": "PBKDF2-SHA256",
+  "iteracoes": 310000,
+  "sal": "4FO/bvOGnXjdQQsTr3GlzA==",
+  "iv": "qPWrpFYFf7Q4ZL4k",
+  "dados": "LgEU2/rjcv7inhnqATuZ18E02okQVv1b8kj9Af9ANUbGBH+uEZ2uw6lOmRBm3/he7Eol4DQuSeyYN/ViIJWJ6dleV9QiXkhwZ84KeZbzcWpbSG4cTG5ywawe2epiAlmvzmDR",
+  "atualizado_em": "24/08/2026 01:27"
 }

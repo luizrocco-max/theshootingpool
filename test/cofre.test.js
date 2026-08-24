@@ -85,6 +85,25 @@ test("acentos e emojis sobrevivem à ida e volta", async () => {
   assert.deepEqual(volta, especial);
 });
 
+/* ═══════════════ o arquivo que vai para o repositório ════════════════ */
+
+test("o data/apostas.json versionado está cifrado, nunca em texto puro", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const bruto = fs.readFileSync(path.join(__dirname, "..", "data", "apostas.json"), "utf8");
+  const arquivo = JSON.parse(bruto);
+
+  assert.equal(
+    Cofre.estaCifrado(arquivo),
+    true,
+    "o arquivo publicado tem que estar cifrado — o repositório é público"
+  );
+  assert.ok(!("competicoes" in arquivo), "não pode haver competições legíveis no arquivo");
+  ["apostador", "atirador", "apostas", "socios"].forEach((palavra) =>
+    assert.ok(!bruto.includes(palavra), `"${palavra}" não pode aparecer no arquivo publicado`)
+  );
+});
+
 /* ══════════════════ conferência local da senha ═══════════════════════ */
 
 test("o verificador confere a senha sem guardá-la", async () => {
