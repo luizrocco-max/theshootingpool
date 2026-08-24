@@ -178,7 +178,7 @@
       const nome = norm(a.apostador);
       if (!nome) return []; // lance sem dono: a linha é descartada
       const pagoC = a.pago ? valorC : 0;
-      return [{ nome, chave: chave(nome), cotaC: valorC, pagoC, pesoPremioC: valorC }];
+      return [{ nome, chave: chave(nome), cotaC: valorC, pagoC, pesoPremioC: valorC, premioC: 0 }];
     }
 
     const pesos = socios.map((s) => Math.max(0, Number(s.cota) || 0));
@@ -190,7 +190,7 @@
       const pagoC = Math.min(bruto, restante);
       restante -= pagoC;
       const nome = norm(s.nome);
-      return { nome, chave: chave(nome), cotaC: cotas[i], pagoC };
+      return { nome, chave: chave(nome), cotaC: cotas[i], pagoC, premioC: 0 };
     });
 
     const modo = a.premio || modoPadrao;
@@ -198,14 +198,17 @@
     // um sócio pode ser escolhido para receber o prêmio inteiro
     const escolhido = norm(a.recebedor);
     const temEscolhido = escolhido && partes.some((p) => p.chave === chave(escolhido));
-    const concentra = temEscolhido || modo === "pagador";
 
-    // Quando o prêmio vai para uma pessoa só, o lance quitado passa a ser dela
-    // nas contas do clube: quem pôs o dinheiro é quem responde por ele. Sem
-    // isso, quem bancou ficaria no prejuízo — teria pago sem receber nada.
-    // Se o lance ainda não foi quitado, as cotas continuam valendo: a dívida
-    // com o clube é de todos os sócios.
-    if (concentra && totalPago === valorC && totalPago > 0)
+    // Quando o prêmio inteiro vai para uma pessoa só, o lance inteiro passa a
+    // ser dela: quem leva o prêmio responde pelo lance. Assim quem pôs o
+    // dinheiro sem levar prêmio nenhum recebe tudo de volta, em vez de ficar
+    // no prejuízo, e quem leva o prêmio é descontado do lance inteiro.
+    if (temEscolhido)
+      partes.forEach((p) => { p.cotaC = p.chave === chave(escolhido) ? valorC : 0; });
+    // No modo "pagador" é o contrário: o prêmio segue o dinheiro, então o
+    // lance quitado passa a ser de quem o bancou. Se ainda não foi quitado,
+    // as cotas continuam valendo — a dívida com o clube é de todos os sócios.
+    else if (modo === "pagador" && totalPago === valorC && totalPago > 0)
       partes.forEach((p) => { p.cotaC = p.pagoC; });
 
     // peso do prêmio: o escolhido leva tudo; senão quem pagou; senão a cota
@@ -373,6 +376,9 @@
       const porPessoaFaixa = new Map();
       partes.forEach((x, i) => {
         const premio = valores[i];
+        // guarda o prêmio na própria participação: é o que deixa mostrar,
+        // num lance rachado, quanto coube a cada sócio
+        x.p.premioC += premio;
         premioPorAposta.set(x.aposta.ordem, (premioPorAposta.get(x.aposta.ordem) || 0) + premio);
         somaPremio(x.p.chave, premio);
         if (!porPessoaFaixa.has(x.p.chave))

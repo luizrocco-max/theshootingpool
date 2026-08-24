@@ -712,7 +712,9 @@
             "",
             p.nome,
             fmt(p.cotaC),
-            "",
+            // com um sócio escolhido para receber, o prêmio não segue a cota:
+            // sem esta coluna a linha ficava com cota zero e nenhuma explicação
+            p.premioC ? fmt(p.premioC) : "-",
             // quem pôs o lance inteiro bancou a parte do outro
             p.pagoC >= a.valorC && a.valorC > 0
               ? "bancou tudo"
