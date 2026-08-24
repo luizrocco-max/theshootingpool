@@ -277,8 +277,9 @@
     $("tabelaApostas").innerHTML = `
       <div class="tablewrap"><table>
         <thead><tr>
-          <th>Atirador</th><th>Apostador</th><th class="num">Valor</th>
-          <th>Pagamento</th>${temPremio ? '<th class="num">Prêmio</th>' : ""}
+          <th>Atirador</th><th>Apostador${aj("socios")}</th>
+          <th class="num">Valor${aj("valorlance")}</th>
+          <th>Pagamento${aj("pagamentoLance")}</th>${temPremio ? `<th class="num">Prêmio${aj("premio")}</th>` : ""}
           <th class="naoimprime"></th>
         </tr></thead>
         <tbody>${linhas
@@ -326,6 +327,107 @@
           })
           .join("")}</tbody>
       </table></div>`;
+  }
+
+  /* ═══════════════════ o "?" que explica cada coisa ══════════════════ */
+
+  /**
+   * O que cada coluna e cada marca da tela querem dizer.
+   *
+   * Escrito para quem organiza o leilão, não para quem escreveu o código:
+   * cada verbete responde "o que é isso" com um exemplo em dinheiro.
+   */
+  const GLOSSARIO = {
+    apostou: {
+      tit: "Apostou",
+      txt: "A soma do que é <b>dela</b> nos lances desta competição. Num lance rachado entre sócios, entra só a parte dela — não o lance inteiro.",
+      ex: "Lance de R$ 400 rachado meio a meio: entra R$ 200 para cada sócio.",
+    },
+    deve: {
+      tit: "Deve",
+      txt: "O que ela ainda não pôs do próprio bolso.<br><br>Quando aparece <b>bancou R$ X</b> em verde, é o contrário: ela pôs <b>mais</b> do que a própria parte, cobrindo a cota de um sócio. Esse valor volta para ela no acerto.",
+      ex: "O LGR pagou os R$ 400 do lance no Xandão sozinho. R$ 200 eram dele e R$ 200 do sócio — então ele bancou R$ 200 e o clube devolve.",
+    },
+    premio: {
+      tit: "Prêmio",
+      txt: "Quanto ela ganhou nas colocações premiadas desta competição, somando todos os lances dela.",
+    },
+    saldo: {
+      tit: "Saldo",
+      txt: "É a conta fechada: <b>prêmio − o que ela devia + o que ela pôs</b>.<br><br>Positivo, o clube paga a ela. Negativo, ela paga o clube.",
+      ex: "Prêmio de R$ 891,66 com R$ 350 de lance ainda não pago: saldo R$ 541,66 a receber.",
+    },
+    situacao: {
+      tit: "Situação",
+      txt: "<b>clube paga</b>: ela tem a receber.<br><b>ele paga</b>: ela deve ao clube.<br><b>quite</b>: não deve nem tem a receber.<br><b>acerta com o sócio</b>: o prêmio do lance dela foi para outro sócio — os dois se acertam por fora.<br><b>acertado</b>: já foi pago, sai da lista.",
+    },
+    bancou: {
+      tit: "Bancou",
+      txt: "Esta pessoa pôs <b>mais dinheiro do que a própria cota</b> num lance rachado: pagou a parte de um sócio na hora do leilão.<br><br>Não é dívida — é o contrário. O clube devolve esse valor a ela no acerto, e ele sai do saldo de quem não pôs.",
+      ex: "OFC pôs os R$ 300 do lance sozinho, mas metade era do sócio: bancou R$ 300 e recebe de volta.",
+    },
+    caixa: {
+      tit: "Caixa do clube",
+      txt: "É o dinheiro dos lances já pagos, que está com quem organizou o leilão. Aparece como quem paga ou quem recebe para a lista fechar no menor número de transferências.",
+    },
+    valorlance: {
+      tit: "Valor",
+      txt: "O valor do lance vencedor naquele atirador. É o que entra no bolo da competição.",
+    },
+    pagamentoLance: {
+      tit: "Pagamento",
+      txt: "Se o lance já foi pago ao clube.<br><br>Em lance rachado, mostra <b>quem bancou</b> quando uma pessoa só pôs o valor inteiro. Clique na marca para abrir os sócios.",
+    },
+    socios: {
+      tit: "Sócios do lance",
+      txt: "Um lance pode ser rachado entre duas ou mais pessoas. A <b>cota</b> diz como ele é dividido; <b>pagou</b> diz quanto cada um pôs do bolso.<br><br>Dá para escolher que o prêmio inteiro vá para um só — aí o lance inteiro passa a ser dele, e quem bancou recebe de volta o que pôs.",
+    },
+  };
+
+  /** O botãozinho "?" para colar ao lado de um título ou de uma marca. */
+  const aj = (chave) =>
+    ` <button type="button" class="ajudabtn" data-ajuda="${chave}" title="O que é isto?" aria-label="O que é isto?">?</button>`;
+
+  let balaoAberto = null; // { botao, el }
+
+  function fecharBalao() {
+    if (balaoAberto) balaoAberto.el.remove();
+    balaoAberto = null;
+  }
+
+  /** Encosta o balão no "?", sem deixar sair pela borda da tela. */
+  function posicionarBalao() {
+    if (!balaoAberto) return;
+    const { botao, el } = balaoAberto;
+    // o "?" pode ter sido refeito por um render: aí não há onde encostar
+    if (!botao.isConnected) return fecharBalao();
+    const r = botao.getBoundingClientRect();
+    const larg = el.offsetWidth;
+    const alt = el.offsetHeight;
+    const tela = document.documentElement.clientWidth;
+    let x = r.left + r.width / 2 - larg / 2;
+    x = Math.max(8, Math.min(x, tela - larg - 8));
+    // não cabe embaixo: abre para cima
+    const y = r.bottom + alt + 16 > window.innerHeight && r.top > alt + 16 ? r.top - alt - 8 : r.bottom + 8;
+    el.style.left = x + window.scrollX + "px";
+    el.style.top = y + window.scrollY + "px";
+  }
+
+  function abrirBalao(botao) {
+    const jaEra = balaoAberto && balaoAberto.botao === botao;
+    fecharBalao();
+    if (jaEra) return; // clicar de novo no mesmo "?" fecha
+    const v = GLOSSARIO[botao.dataset.ajuda];
+    if (!v) return;
+
+    const el = document.createElement("div");
+    el.className = "balao";
+    el.innerHTML =
+      `<div class="tit">${esc(v.tit)}</div>${v.txt}` +
+      (v.ex ? `<div class="ex">Exemplo: ${v.ex}</div>` : "");
+    document.body.appendChild(el);
+    balaoAberto = { botao, el };
+    posicionarBalao();
   }
 
   /**
@@ -562,10 +664,10 @@
           p.devendoC
             ? esc(fmt(p.devendoC))
             : p.adiantadoC
-            ? // no papel e no celular o title não existe: o "bancou" tem que
-              // estar na tela, senão sobra um número negativo sem explicação
-              `<span class="money pos">−${esc(fmt(p.adiantadoC))}</span>` +
-              ` <span class="tag mut">bancou</span>`
+            ? // "−R$ 200,00 bancou" numa coluna chamada Deve se lê ao contrário
+              // do que é. Escrito por extenso, e com o "?" ao lado explicando.
+              `<span class="money pos">bancou ${esc(fmt(p.adiantadoC))}</span>` +
+              aj("bancou")
             : "—"
         }</td>
         <td class="num">${p.premioC ? esc(fmt(p.premioC)) : "—"}</td>
@@ -582,8 +684,13 @@
     $("tabelaAcerto").innerHTML = `
       <div class="tablewrap"><table>
         <thead><tr>
-          <th>Apostador</th><th class="num">Apostou</th><th class="num">Deve</th>
-          <th class="num">Prêmio</th><th class="num">Saldo</th><th>Situação</th><th class="naoimprime"></th>
+          <th>Apostador</th>
+          <th class="num">Apostou${aj("apostou")}</th>
+          <th class="num">Deve${aj("deve")}</th>
+          <th class="num">Prêmio${aj("premio")}</th>
+          <th class="num">Saldo${aj("saldo")}</th>
+          <th>Situação${aj("situacao")}</th>
+          <th class="naoimprime"></th>
         </tr></thead>
         <tbody>${conta.apostadores.map(linha).join("")}</tbody>
       </table></div>`;
@@ -636,7 +743,7 @@
         ${o.botoes || ""}
       </div>
       <div class="tablewrap"><table>
-        <thead><tr><th>Quem paga</th><th></th><th>Para quem</th><th class="num">Valor</th></tr></thead>
+        <thead><tr><th>Quem paga${aj("caixa")}</th><th></th><th>Para quem</th><th class="num">Valor</th></tr></thead>
         <tbody>${lista
           .map(
             (p) => `<tr class="win">
@@ -1595,11 +1702,26 @@
       o.addEventListener("click", (e) => { if (e.target === o) o.hidden = true; });
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") document.querySelectorAll(".overlay").forEach((o) => (o.hidden = true));
+      if (e.key === "Escape") {
+        fecharBalao();
+        document.querySelectorAll(".overlay").forEach((o) => (o.hidden = true));
+      }
     });
+    // rolar não pode fechar: só abrir o balão já muda o layout e dispara
+    // scroll, e o balão morria no mesmo instante em que nascia
+    window.addEventListener("resize", posicionarBalao);
+    window.addEventListener("scroll", posicionarBalao, true);
 
     // cliques nas tabelas e chips (delegação)
     document.addEventListener("click", (e) => {
+      const ajuda = e.target.closest("[data-ajuda]");
+      if (ajuda) {
+        e.preventDefault();
+        e.stopPropagation();
+        abrirBalao(ajuda);
+        return;
+      }
+      fecharBalao();
       const chip = e.target.closest("[data-filtro]");
       if (chip) {
         filtroAtirador = chip.dataset.filtro || null;
