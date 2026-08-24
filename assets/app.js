@@ -220,7 +220,11 @@
 
   function kpis(destino, itens) {
     $(destino).innerHTML = itens
-      .map((k) => `<div class="kpi ${k.cls || ""}"><div class="v">${k.v}</div><div class="l">${esc(k.l)}</div></div>`)
+      .map(
+        (k) =>
+          `<div class="kpi ${k.cls || ""}"><div class="v">${k.v}</div>` +
+          `<div class="l">${esc(k.l)}${k.ajuda ? aj(k.ajuda) : ""}</div></div>`
+      )
       .join("");
   }
 
@@ -235,11 +239,21 @@
     }
     const t = conta.totais;
     kpis("kpisApostas", [
-      { v: esc(fmt(conta.pote)), l: "Bolo da competição", cls: "a" },
-      { v: esc(fmt(t.pagoC)), l: "Já recebido", cls: "g" },
-      { v: esc(fmt(t.devendoC)), l: "A receber", cls: t.devendoC ? "b" : "" },
-      { v: esc(fmt(t.premiosC)), l: "Em prêmios" },
-      { v: `${t.nApostas} <span style="font-size:13px;color:var(--muted)">/ ${t.nApostadores} pess.</span>`, l: "Apostas" },
+      { v: esc(fmt(conta.pote)), l: "Bolo da competição", cls: "a", ajuda: "bolo" },
+      { v: esc(fmt(t.pagoC)), l: "Já recebido", cls: "g", ajuda: "jarecebido" },
+      // o que falta ENTRAR no caixa, não o que as pessoas devem entre si:
+      // quando um sócio banca a parte do outro, o clube já recebeu tudo
+      {
+        v: esc(fmt(conta.pote - t.pagoC)),
+        l: "Falta entrar",
+        cls: conta.pote - t.pagoC ? "b" : "",
+        ajuda: "faltaentrar",
+      },
+      { v: esc(fmt(t.premiosC)), l: "Em prêmios", ajuda: "empremios" },
+      {
+        v: `${t.nApostas} <span style="font-size:13px;color:var(--muted)">/ ${t.nApostadores} pess.</span>`,
+        l: "Apostas",
+      },
     ]);
 
     // filtro por atirador
@@ -377,6 +391,44 @@
     pagamentoLance: {
       tit: "Pagamento",
       txt: "Se o lance já foi pago ao clube.<br><br>Em lance rachado, mostra <b>quem bancou</b> quando uma pessoa só pôs o valor inteiro. Clique na marca para abrir os sócios.",
+    },
+    bolo: {
+      tit: "Bolo da competição",
+      txt: "A soma de <b>todos</b> os lances, pagos ou não. É o dinheiro que vai ser dividido entre os colocados premiados.",
+    },
+    jarecebido: {
+      tit: "Já recebido",
+      txt: "Quanto o caixa do clube realmente tem na mão, somando o que cada um pôs do próprio bolso.",
+      ex: "Se um sócio bancou o lance inteiro, o clube recebeu o lance inteiro — mesmo o outro sócio não tendo posto nada.",
+    },
+    faltaentrar: {
+      tit: "Falta entrar",
+      txt: "Quanto ainda falta <b>chegar ao caixa do clube</b>: bolo menos o que já foi recebido.<br><br>Não é a mesma coisa que a soma do que as pessoas devem. Quando um sócio banca a parte do outro, o clube já está com o dinheiro — a dívida existe, mas é <b>entre os dois sócios</b>, não com o clube. Aí este número fica zerado e o acerto mostra quem deve a quem.",
+      ex: "Rocco não pôs R$ 500 dos lances dele, mas o Lamberto e o Olavo puseram por ele: o clube recebeu os R$ 10.700 e aqui aparece R$ 0,00.",
+    },
+    empremios: {
+      tit: "Em prêmios",
+      txt: "Quanto do bolo vai ser distribuído entre os colocados premiados. Com taxa do clube em zero e todas as faixas com apostador, é o bolo inteiro.",
+    },
+    clubepaga: {
+      tit: "O clube paga",
+      txt: "A soma do que o caixa tem a pagar às pessoas com saldo positivo.",
+    },
+    cluberecebe: {
+      tit: "O clube recebe",
+      txt: "A soma do que o caixa tem a cobrar das pessoas com saldo negativo.",
+    },
+    efeitocaixa: {
+      tit: "Efeito no caixa",
+      txt: "O que sobra (ou falta) no caixa do clube depois de pagar e cobrar todo mundo. Sem taxa do clube e com todas as faixas premiadas, dá zero: entrou e saiu o mesmo.",
+    },
+    emaberto: {
+      tit: "Acertos em aberto",
+      txt: "Quantas pessoas ainda precisam mover dinheiro. Quem está quite não conta.",
+    },
+    movimentado: {
+      tit: "Movimentado",
+      txt: "A soma dos bolos de todas as competições da temporada.",
     },
     socios: {
       tit: "Sócios do lance",
@@ -619,13 +671,14 @@
     const paga = conta.abate ? t.aPagarC : t.brutoPagarC;
     const recebe = conta.abate ? t.aReceberC : t.brutoReceberC;
     kpis("kpisAcerto", [
-      { v: esc(fmt(paga)), l: "O clube paga", cls: "g" },
-      { v: esc(fmt(recebe)), l: "O clube recebe", cls: "b" },
-      { v: esc(fmt(recebe - paga)), l: "Efeito no caixa", cls: "a" },
+      { v: esc(fmt(paga)), l: "O clube paga", cls: "g", ajuda: "clubepaga" },
+      { v: esc(fmt(recebe)), l: "O clube recebe", cls: "b", ajuda: "cluberecebe" },
+      { v: esc(fmt(recebe - paga)), l: "Efeito no caixa", cls: "a", ajuda: "efeitocaixa" },
       // quem está quite não é acerto pendente — é o mesmo critério da aba
       {
         v: String(conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0).length),
         l: "Acertos em aberto",
+        ajuda: "emaberto",
       },
     ]);
 
@@ -803,10 +856,10 @@
     const t = C.temporada(DADOS);
     kpis("kpisTemporada", [
       { v: String(t.totais.competicoes), l: "Competições" },
-      { v: esc(fmt(t.totais.movimentadoC)), l: "Movimentado", cls: "a" },
-      { v: esc(fmt(t.totais.premiosC)), l: "Pago em prêmios" },
-      { v: esc(fmt(t.totais.aPagarC)), l: "Clube deve", cls: t.totais.aPagarC ? "g" : "" },
-      { v: esc(fmt(t.totais.aReceberC)), l: "Clube tem a receber", cls: t.totais.aReceberC ? "b" : "" },
+      { v: esc(fmt(t.totais.movimentadoC)), l: "Movimentado", cls: "a", ajuda: "movimentado" },
+      { v: esc(fmt(t.totais.premiosC)), l: "Pago em prêmios", ajuda: "empremios" },
+      { v: esc(fmt(t.totais.aPagarC)), l: "Clube deve", cls: t.totais.aPagarC ? "g" : "", ajuda: "clubepaga" },
+      { v: esc(fmt(t.totais.aReceberC)), l: "Clube tem a receber", cls: t.totais.aReceberC ? "b" : "", ajuda: "cluberecebe" },
     ]);
 
     if (!t.apostadores.length) {
