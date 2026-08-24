@@ -1494,6 +1494,7 @@
     $("btnSalvarPodio").onclick = () => salvarPodio();
     $("btnMaisColocacao").onclick = () => mudarColocacoes(+1);
     $("btnMenosColocacao").onclick = () => mudarColocacoes(-1);
+    $("btnDividirPct").onclick = () => dividirResto();
     $("btnLimparPodio").onclick = () => {
       const c = compAtual();
       if (!c) return;
@@ -1627,6 +1628,35 @@
   }
 
   /** Acrescenta ou tira uma colocação premiada da competição atual. */
+  /**
+   * Mantém o 1º lugar como está e reparte o que falta para 100% igualmente
+   * entre as outras colocações.
+   *
+   * É o caso do leilão em que o campeão leva uma fatia e os demais colocados
+   * combinam dividir o resto: 50% para o 1º e os outros 50% entre seis dá
+   * 8,3333…% para cada um. Digitado à mão, ninguém escreve as quinze casas —
+   * escreve 8,3333, a soma dá 99,9998% e a divisão sai um centavo torta.
+   * Aqui a fração inteira fica gravada, e o campo mostra o número curto.
+   */
+  function dividirResto() {
+    const c = compAtual();
+    if (!c) return;
+    salvarPodio(true); // não perde o que já está digitado
+    const premios = C.regraDe(c).premios.slice();
+    if (premios.length === 1) premios[0] = 100;
+    else {
+      const resto = 100 - premios[0];
+      if (resto <= 0) {
+        alert("O 1º lugar já leva 100% ou mais — não sobra nada para dividir.");
+        return;
+      }
+      const fatia = resto / (premios.length - 1);
+      for (let i = 1; i < premios.length; i++) premios[i] = fatia;
+    }
+    c.regra = Object.assign({}, C.regraDe(c), { premios });
+    salvar();
+  }
+
   function mudarColocacoes(delta) {
     const c = compAtual();
     if (!c) return;
