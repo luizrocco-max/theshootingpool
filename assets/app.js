@@ -328,11 +328,40 @@
       </table></div>`;
   }
 
+  /**
+   * Como chamar uma colocação, sabendo reconhecer empate.
+   *
+   * Colocações seguidas que valem o mesmo percentual não são 2º, 3º e 4º:
+   * são um empate, dividindo a mesma fatia do bolo. Foi o caso do leilão em
+   * que o campeão levou 50% e outros seis combinaram rachar os outros 50% —
+   * chamar um de prata e outro de bronze inventa uma ordem que não existe.
+   */
+  function faixaRotulo(regra, i) {
+    const premios = regra.premios;
+    const pct = premios[i];
+    let ini = i, fim = i;
+    while (ini > 0 && premios[ini - 1] === pct) ini--;
+    while (fim < premios.length - 1 && premios[fim + 1] === pct) fim++;
+    const empate = ini !== fim;
+    return {
+      medalha: medalha(ini),
+      rotulo: empate
+        ? C.rotuloPosicao(ini) + " ao " + C.rotuloPosicao(fim)
+        : C.rotuloPosicao(i),
+      empate,
+    };
+  }
+
   function posicaoTag(conta, atirador) {
     const f = conta.faixas.find((x) => x.atirador && !x.repetida && C.chave(x.atirador) === C.chave(atirador));
     if (!f) return "";
-    const medalha = ["🥇", "🥈", "🥉"][f.posicao - 1];
-    return ` <span class="pos">${medalha}</span>`;
+    const r = faixaRotulo(conta.regra, f.posicao - 1);
+    // só a medalha basta para pódio de três; fora disso o número evita dúvida
+    const texto = r.empate || f.posicao > 3 ? r.medalha + " " + r.rotulo : r.medalha;
+    const titulo = r.empate
+      ? `${r.rotulo}: mesma fatia do bolo para todos (${C.pct(f.pct)}% cada)`
+      : `${r.rotulo} lugar — ${C.pct(f.pct)}% do bolo`;
+    return ` <span class="pos" title="${esc(titulo)}">${esc(texto)}</span>`;
   }
 
   /* ────────────────────────── aba: resultado ────────────────────────── */
@@ -426,9 +455,12 @@
             const pctReal = f.ativa && Math.abs(f.pctEfetivo - f.pct) > 0.01
               ? `${C.pct(f.pct)}% → ${f.pctEfetivo.toFixed(1).replace(".", ",")}%`
               : `${C.pct(f.pct)}%`;
+            const r = faixaRotulo(conta.regra, i);
+            const posicao = esc(C.rotuloPosicao(i)) +
+              (r.empate ? ` <i style="font-style:normal;opacity:.7">(empate)</i>` : "");
             return `<div class="pod g${i + 1}">
               <span class="pct">${esc(pctReal)}</span>
-              <div class="medal">${medalha(i)} <span style="font-size:13px;color:var(--muted);font-weight:700">${esc(C.rotuloPosicao(i))}</span></div>
+              <div class="medal" title="${esc(r.empate ? r.rotulo + ": todos dividem a mesma fatia" : "")}">${r.medalha} <span style="font-size:13px;color:var(--muted);font-weight:700">${posicao}</span></div>
               <div class="nm">${esc(f.atirador || "—")}</div>
               <div class="vl">${esc(fmt(f.valorC))}</div>
               ${corpo}
