@@ -183,6 +183,137 @@ test("pagou: true quer dizer que o sócio pôs a parte dele", () => {
   assert.equal(achar(conta, "Luiz").saldoC, 50000, "cada um só recebe o prêmio");
 });
 
+/* ════════════════ escolher quem dos sócios recebe ════════════════════ */
+
+test("dá para escolher qual sócio recebe o prêmio inteiro", () => {
+  const comp = competicao();
+  comp.apostas[0].recebedor = "João"; // quem recebe é o João, mas quem pagou foi o Luiz
+  const conta = C.calcular(comp);
+
+  const luiz = achar(conta, "Luiz");
+  const joao = achar(conta, "João");
+
+  assert.equal(joao.premioC, 100000, "o prêmio inteiro vai para o escolhido");
+  assert.equal(joao.saldoC, 100000, "e ele recebe os 1.000");
+  assert.equal(luiz.premioC, 0);
+  assert.equal(
+    luiz.saldoC,
+    0,
+    "o Luiz não fica no prejuízo: o lance que ele bancou passou a ser dele nas contas"
+  );
+  assert.ok(conta.fecha);
+});
+
+test("o escolhido recebe mesmo sem ter posto dinheiro", () => {
+  const comp = competicao();
+  comp.apostas[0].socios = [
+    { nome: "Luiz", cota: 50, pagou: 500 },
+    { nome: "João", cota: 50, pagou: 0 },
+    { nome: "Ana", cota: 0, pagou: 0 },
+  ];
+  comp.apostas[0].recebedor = "Ana";
+  const conta = C.calcular(comp);
+  assert.equal(achar(conta, "Ana").premioC, 100000);
+  assert.equal(achar(conta, "Luiz").saldoC, 0, "quem bancou sai quite");
+  assert.equal(achar(conta, "Ana").saldoC, 100000);
+  assert.ok(conta.fecha);
+});
+
+test("escolhido que não é sócio do lance é ignorado", () => {
+  const comp = competicao();
+  comp.apostas[0].recebedor = "Fulano de Tal";
+  const conta = C.calcular(comp);
+  assert.equal(achar(conta, "Luiz").saldoC, 75000, "volta a valer a divisão por cotas");
+  assert.equal(achar(conta, "João").saldoC, 25000);
+});
+
+test("com o lance ainda em aberto, escolher quem recebe não muda quem deve", () => {
+  const comp = competicao();
+  comp.apostas[0].socios = [
+    { nome: "Luiz", cota: 50, pagou: 0 },
+    { nome: "João", cota: 50, pagou: 0 },
+  ];
+  comp.apostas[0].recebedor = "João";
+  const conta = C.calcular(comp);
+  assert.equal(achar(conta, "Luiz").devendoC, 25000, "cada um continua devendo a cota");
+  assert.equal(achar(conta, "João").devendoC, 25000);
+  assert.equal(achar(conta, "João").premioC, 100000, "mas o prêmio vai todo para o João");
+  assert.equal(achar(conta, "Luiz").saldoC, -25000);
+  assert.equal(achar(conta, "João").saldoC, 75000);
+  assert.ok(conta.fecha);
+});
+
+/* ══════════════════ abater ou não o lance do prêmio ══════════════════ */
+
+const soLuiz = (regra) => ({
+  id: "c1",
+  nome: "Etapa",
+  resultado: ["Atirador A"],
+  regra,
+  acertos: {},
+  apostas: [
+    { id: "L1", atirador: "Atirador A", apostador: "Luiz", valor: 500, pago: false },
+    { id: "L2", atirador: "Atirador B", apostador: "Pedro", valor: 500, pago: true },
+  ],
+});
+
+test("com abate (padrão): um acerto líquido só", () => {
+  const conta = C.calcular(soLuiz({ premios: [100] }));
+  assert.equal(conta.abate, true);
+  assert.equal(achar(conta, "Luiz").saldoC, 50000, "ganhou 1.000 e devia 500");
+  assert.equal(conta.acerto.pagamentos.length, 1);
+  assert.deepEqual(conta.acerto.pagamentos[0], {
+    de: C.NOME_CAIXA,
+    para: "Luiz",
+    valorC: 50000,
+  });
+});
+
+test("sem abate: paga o lance e recebe o prêmio em separado", () => {
+  const conta = C.calcular(soLuiz({ premios: [100], abate: false }));
+  assert.equal(conta.abate, false);
+  assert.equal(conta.acerto.bruto, true);
+  assert.equal(conta.acerto.pagamentos.length, 2, "duas pontas, não uma");
+
+  const recebe = conta.acerto.pagamentos.find((p) => p.para === "Luiz");
+  const paga = conta.acerto.pagamentos.find((p) => p.de === "Luiz");
+  assert.equal(recebe.valorC, 100000, "recebe o prêmio inteiro");
+  assert.equal(paga.valorC, 50000, "e paga o lance que devia");
+
+  // o líquido continua o mesmo: só muda como o dinheiro anda
+  assert.equal(recebe.valorC - paga.valorC, achar(conta, "Luiz").saldoC);
+  assert.equal(conta.totais.brutoPagarC, 100000);
+  assert.equal(conta.totais.brutoReceberC, 50000);
+});
+
+test("sem abate, quem já pagou o lance só recebe", () => {
+  const comp = soLuiz({ premios: [100], abate: false });
+  comp.apostas[0].pago = true;
+  const conta = C.calcular(comp);
+  assert.equal(conta.acerto.pagamentos.length, 1);
+  assert.equal(conta.acerto.pagamentos[0].para, "Luiz");
+  assert.equal(conta.acerto.pagamentos[0].valorC, 100000);
+});
+
+test("sem abate, quem adiantou pelo sócio recebe o adiantamento à parte", () => {
+  const conta = C.calcular(competicao({ regra: { premios: [100], abate: false } }));
+  const doLuiz = conta.acerto.pagamentos.filter((p) => p.de === "Luiz" || p.para === "Luiz");
+  const valores = doLuiz.map((p) => p.valorC).sort((a, b) => b - a);
+  assert.deepEqual(valores, [50000, 25000], "prêmio de 500 e os 250 que adiantou");
+  assert.equal(
+    doLuiz.reduce((s, p) => s + (p.para === "Luiz" ? p.valorC : -p.valorC), 0),
+    75000,
+    "somando, dá os mesmos 750"
+  );
+});
+
+test("quem já acertou fica de fora, com ou sem abate", () => {
+  const comp = soLuiz({ premios: [100], abate: false });
+  comp.acertos = { LUIZ: { em: "2026-08-16" } };
+  const conta = C.calcular(comp);
+  assert.equal(conta.acerto.pagamentos.length, 0);
+});
+
 /* ═══════════════ conversa com o resto do sistema ═════════════════════ */
 
 test("o lance com sócios continua sendo um lance só na tabela", () => {

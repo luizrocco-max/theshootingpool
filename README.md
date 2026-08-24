@@ -100,6 +100,7 @@ ajustes, valendo para a competição toda):
 | --- | --- |
 | **Dividir entre os sócios** (padrão) | Luiz recebe **R$ 750** (R$ 500 do prêmio + os R$ 250 que adiantou) e João recebe **R$ 250** (R$ 500 do prêmio − os R$ 250 da cota dele). Cada um já sai quite. |
 | **Tudo para quem bancou** | Luiz recebe os **R$ 1.000** sozinho e acerta com o João por fora. O João aparece no acerto como *acerta com o sócio*, sem entrar nas contas do clube. |
+| **Tudo para um sócio escolhido** | O mesmo, mas nomeando quem recebe. Escolhendo o João, ele leva os **R$ 1.000** e o **Luiz sai quite** — o lance que ele bancou passa a ser dele nas contas, para ele não ficar no prejuízo por ter pago sem receber. |
 
 O botão 👥 fica em cada linha da tabela de lances. Ao abrir, ele já traz quem
 lançou na primeira linha; é só acrescentar o sócio, ajustar a cota (tudo `1` =
@@ -108,6 +109,23 @@ cota de cada um em reais e quem adiantou ou ainda deve.
 
 Na planilha, isso vive na aba **`Socios`**: `COMPETICAO · ATIRADOR · SOCIO ·
 COTA · PAGOU · QUEM LEVA`, uma linha por pessoa, ligada ao lance pelo atirador.
+
+---
+
+## Abater o lance do prêmio, ou não
+
+Quem ganhou e ainda não pagou o lance pode acertar de dois jeitos. A escolha
+fica nos Ajustes, ou num atalho na própria aba 🤝 Acerto de contas.
+
+> Luiz devia **R$ 500** do lance e ganhou **R$ 1.000**.
+
+| Modo | O que acontece |
+| --- | --- |
+| **Abater** (padrão) | Um acerto só: o clube paga **R$ 500** a ele e está quite. |
+| **Cobrar e pagar em separado** | Dois movimentos: o Luiz paga os **R$ 500** do lance e recebe os **R$ 1.000** do prêmio. Dá mais transferências, mas o caixa registra as duas pontas. |
+
+O saldo líquido é o mesmo nos dois casos — muda só como o dinheiro anda. Sem
+abate, quem adiantou pelo sócio também recebe esse adiantamento à parte.
 
 ---
 

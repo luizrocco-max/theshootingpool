@@ -80,6 +80,9 @@
           valor: Number(a.valor) || 0,
           pago: !!a.pago,
           pagoAuto: !!a.pagoAuto,
+          socios: Array.isArray(a.socios) && a.socios.length ? a.socios : undefined,
+          premio: a.premio === "cotas" || a.premio === "pagador" ? a.premio : undefined,
+          recebedor: a.recebedor ? C.norm(a.recebedor) : undefined,
           em: a.em || null,
         })),
       });
@@ -464,10 +467,12 @@
       return;
     }
     const t = conta.totais;
+    const paga = conta.abate ? t.aPagarC : t.brutoPagarC;
+    const recebe = conta.abate ? t.aReceberC : t.brutoReceberC;
     kpis("kpisAcerto", [
-      { v: esc(fmt(t.aPagarC)), l: "O clube paga", cls: "g" },
-      { v: esc(fmt(t.aReceberC)), l: "O clube recebe", cls: "b" },
-      { v: esc(fmt(t.aReceberC - t.aPagarC)), l: "Efeito no caixa", cls: "a" },
+      { v: esc(fmt(paga)), l: "O clube paga", cls: "g" },
+      { v: esc(fmt(recebe)), l: "O clube recebe", cls: "b" },
+      { v: esc(fmt(recebe - paga)), l: "Efeito no caixa", cls: "a" },
       { v: String(conta.apostadores.filter((p) => !p.acertado).length), l: "Acertos em aberto" },
     ]);
 
@@ -477,7 +482,17 @@
       $("pagamentosComp").innerHTML = "";
       return;
     }
-    $("pagamentosComp").innerHTML = cardPagamentos(conta.acerto, "Quem paga quem");
+    $("pagamentosComp").innerHTML = cardPagamentos(
+      conta.acerto,
+      conta.abate ? "Quem paga quem" : "Movimentos do caixa",
+      {
+        botoes:
+          `<button class="btn ghost mini naoimprime" data-act="abate">${
+            conta.abate ? "↔️ Cobrar e pagar em separado" : "🧮 Abater o lance do prêmio"
+          }</button>`,
+        bruto: !conta.abate,
+      }
+    );
 
     const linha = (p) => {
       const situacao = p.foraDoCaixa
@@ -582,8 +597,11 @@
       <div class="note">
         Total de ${esc(fmt(total))} em ${lista.length} pagamento${lista.length > 1 ? "s" : ""}${
       o.avulsos && o.avulsos > lista.length ? `, no lugar de ${o.avulsos} acertos avulsos` : ""
-    }. Quem deve paga direto quem tem a receber; o <b>caixa do clube</b> é o dinheiro das apostas
-        já pagas, que está com o organizador.
+    }. ${
+      o.bruto
+        ? "Cada ponta é um movimento próprio: quem devia o lance paga o lance, e recebe o prêmio à parte."
+        : "Quem deve paga direto quem tem a receber"
+    }; o <b>caixa do clube</b> é o dinheiro das apostas já pagas, que está com o organizador.
       </div>
     </div>`;
   }
@@ -790,7 +808,19 @@
             <option value="pagador"${r.socios === "pagador" ? " selected" : ""}>Tudo para quem bancou o lance</option>
           </select>
           <div class="hint">Vale para os lances que não tiverem escolha própria. No 👥 de cada
-            lance dá para mudar só naquele.</div>
+            lance dá para mudar só naquele, inclusive escolhendo qual sócio recebe.</div>
+        </div>
+      </div>
+      <div class="formgrid" style="grid-template-columns:1fr;margin-top:12px">
+        <div>
+          <label class="lb">Quem ganhou e não pagou o lance</label>
+          <select id="rAbate">
+            <option value="sim"${r.abate ? " selected" : ""}>Abater o lance do prêmio (um acerto só)</option>
+            <option value="nao"${!r.abate ? " selected" : ""}>Cobrar o lance e pagar o prêmio em separado</option>
+          </select>
+          <div class="hint">Abatendo, quem devia R$ 500 e ganhou R$ 1.000 recebe R$ 500 e pronto.
+            Em separado, ele paga os R$ 500 e recebe os R$ 1.000 — dois movimentos, para o caixa
+            registrar as duas pontas.</div>
         </div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
@@ -814,6 +844,7 @@
       rateio: $("rRateio").value,
       sobra: $("rSobra").value,
       socios: $("rSocios").value,
+      abate: $("rAbate").value !== "nao",
       taxaClube: num("rTaxa"),
     });
     const soma = regra.premios.reduce((a, b) => a + b, 0);
@@ -972,9 +1003,8 @@
     $("listaSocios").innerHTML =
       `<div class="sociocab"><span>Sócio</span><span>Cota</span><span>Pagou R$</span><span></span></div>` +
       linhas.map(linhaSocio).join("");
-    $("socioModo").value = a.premio || "";
     msg("msgSocios", "", "");
-    atualizarResumoSocios();
+    atualizarResumoSocios(a.recebedor ? "recebe:" + C.chave(a.recebedor) : a.premio || "");
     $("modalSocios").hidden = false;
   }
 
@@ -988,12 +1018,25 @@
   }
 
   /** Mostra ao vivo quanto é a cota de cada um, em reais. */
-  function atualizarResumoSocios() {
+  function atualizarResumoSocios(escolhaInicial) {
     const c = compAtual();
     const a = c && c.apostas.find((x) => x.id === socioEditando);
     if (!a) return;
     const valorC = C.cent(a.valor);
     const linhas = lerSocios().filter((s) => s.nome);
+
+    // as opções de "quem leva" incluem cada sócio pelo nome
+    const sel = $("socioModo");
+    const escolha = escolhaInicial !== undefined ? escolhaInicial : sel.value;
+    sel.innerHTML =
+      `<option value="">Como está nos ajustes da competição</option>` +
+      `<option value="cotas">Dividir entre os sócios, pela cota de cada um</option>` +
+      `<option value="pagador">Tudo para quem bancou o lance</option>` +
+      linhas
+        .map((s) => `<option value="recebe:${esc(C.chave(s.nome))}">Tudo para ${esc(s.nome)}</option>`)
+        .join("");
+    sel.value = [...sel.options].some((o) => o.value === escolha) ? escolha : "";
+
     if (!linhas.length) { $("socioResumo").innerHTML = ""; return; }
 
     const pesos = linhas.map((s) => (Number.isFinite(s.cota) && s.cota > 0 ? s.cota : 0));
@@ -1015,11 +1058,15 @@
           )}. O que faltar continua em aberto com o clube.</span>`
         : `<br><span style="color:var(--good)">Lance quitado.</span>`);
 
-    const modo = $("socioModo").value || C.regraDe(c).socios;
-    $("socioModoNota").textContent =
-      modo === "pagador"
-        ? "O prêmio inteiro vai para quem bancou o lance; os sócios acertam entre eles por fora."
-        : "Cada sócio recebe a parte dele do prêmio, já descontado o que devia da cota.";
+    const modo = sel.value || C.regraDe(c).socios;
+    const escolhido = modo.startsWith("recebe:")
+      ? (linhas.find((s) => C.chave(s.nome) === modo.slice(7)) || {}).nome
+      : null;
+    $("socioModoNota").textContent = escolhido
+      ? `O prêmio inteiro vai para ${escolhido}; quem bancou o lance sai quite e os sócios acertam entre eles.`
+      : modo === "pagador"
+      ? "O prêmio inteiro vai para quem bancou o lance; os sócios acertam entre eles por fora."
+      : "Cada sócio recebe a parte dele do prêmio, já descontado o que devia da cota.";
   }
 
   function salvarSocios() {
@@ -1049,7 +1096,16 @@
       pagou: C.reais(s.pagouC),
     }));
     a.apostador = linhas[0].nome; // o primeiro é quem aparece como dono do lance
-    a.premio = $("socioModo").value || null;
+
+    const escolha = $("socioModo").value;
+    if (escolha.startsWith("recebe:")) {
+      const alvo = linhas.find((s) => C.chave(s.nome) === escolha.slice(7));
+      a.recebedor = alvo ? alvo.nome : null;
+      a.premio = null;
+    } else {
+      a.recebedor = null;
+      a.premio = escolha || null;
+    }
     a.pago = pago >= valorC;
     a.pagoAuto = false;
     $("modalSocios").hidden = true;
@@ -1065,6 +1121,7 @@
     const primeiro = (a.socios && a.socios[0] && a.socios[0].nome) || a.apostador;
     delete a.socios;
     a.premio = null;
+    a.recebedor = null;
     a.apostador = primeiro;
     $("modalSocios").hidden = true;
     socioEditando = null;
@@ -1375,8 +1432,9 @@
     };
     $("btnSalvarSocios").onclick = salvarSocios;
     $("btnTirarSocios").onclick = tirarSocios;
-    $("listaSocios").addEventListener("input", atualizarResumoSocios);
-    $("socioModo").addEventListener("change", atualizarResumoSocios);
+    // sem passar o evento adiante: o argumento é a escolha, não o Event
+    $("listaSocios").addEventListener("input", () => atualizarResumoSocios());
+    $("socioModo").addEventListener("change", () => atualizarResumoSocios());
 
     // planilha
     $("btnModelo").onclick = baixarModelo;
@@ -1510,6 +1568,10 @@
         gerarPDF();
       } else if (act === "pdfgeral") {
         gerarPDFGeral();
+      } else if (act === "abate") {
+        if (!c) return;
+        c.regra = Object.assign(C.regraDe(c), { abate: !C.regraDe(c).abate });
+        salvar();
       } else if (act === "socios") {
         abrirSocios(btn.dataset.id);
       } else if (act === "tirarSocio") {

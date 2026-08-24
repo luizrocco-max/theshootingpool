@@ -37,6 +37,10 @@
     // lance com sócios: divide o prêmio pelas cotas de cada um ("cotas") ou
     // entrega tudo a quem bancou o lance ("pagador")
     socios: "cotas",
+    // true: quem ganhou e não pagou tem o lance abatido do prêmio (um acerto
+    // líquido só). false: paga o lance e recebe o prêmio em movimentos
+    // separados, para o caixa registrar as duas coisas.
+    abate: true,
   };
 
   function regraDe(comp) {
@@ -48,6 +52,7 @@
     r.rateio = r.rateio === "igual" ? "igual" : "proporcional";
     r.sobra = r.sobra === "clube" ? "clube" : "redistribuir";
     r.socios = r.socios === "pagador" ? "pagador" : "cotas";
+    r.abate = r.abate !== false;
     r.taxaClube = Math.min(100, Math.max(0, Number(r.taxaClube) || 0));
     return r;
   }
@@ -160,7 +165,8 @@
     if (!socios.length) {
       const nome = norm(a.apostador);
       if (!nome) return []; // lance sem dono: a linha é descartada
-      return [{ nome, chave: chave(nome), cotaC: valorC, pagoC: a.pago ? valorC : 0 }];
+      const pagoC = a.pago ? valorC : 0;
+      return [{ nome, chave: chave(nome), cotaC: valorC, pagoC, pesoPremioC: valorC }];
     }
 
     const pesos = socios.map((s) => Math.max(0, Number(s.cota) || 0));
@@ -175,15 +181,29 @@
       return { nome, chave: chave(nome), cotaC: cotas[i], pagoC };
     });
 
-    // No modo "prêmio para quem pagou", o lance quitado passa a ser de quem
-    // bancou: ele responde pelo valor todo e leva o prêmio todo. Quem não pôs
-    // dinheiro sai das contas do clube e acerta com o sócio por fora.
-    // Se o lance ainda não foi quitado, as cotas continuam valendo — a dívida
-    // com o clube é de todos.
     const modo = a.premio || modoPadrao;
     const totalPago = partes.reduce((s, p) => s + p.pagoC, 0);
-    if (modo === "pagador" && totalPago === valorC)
+    // um sócio pode ser escolhido para receber o prêmio inteiro
+    const escolhido = norm(a.recebedor);
+    const temEscolhido = escolhido && partes.some((p) => p.chave === chave(escolhido));
+    const concentra = temEscolhido || modo === "pagador";
+
+    // Quando o prêmio vai para uma pessoa só, o lance quitado passa a ser dela
+    // nas contas do clube: quem pôs o dinheiro é quem responde por ele. Sem
+    // isso, quem bancou ficaria no prejuízo — teria pago sem receber nada.
+    // Se o lance ainda não foi quitado, as cotas continuam valendo: a dívida
+    // com o clube é de todos os sócios.
+    if (concentra && totalPago === valorC && totalPago > 0)
       partes.forEach((p) => { p.cotaC = p.pagoC; });
+
+    // peso do prêmio: o escolhido leva tudo; senão quem pagou; senão a cota
+    partes.forEach((p) => {
+      p.pesoPremioC = temEscolhido
+        ? p.chave === chave(escolhido) ? valorC : 0
+        : modo === "pagador" && totalPago > 0
+        ? p.pagoC
+        : p.cotaC;
+    });
 
     return partes;
   }
@@ -318,7 +338,9 @@
       // uma entrada por pessoa dentro de cada lance da faixa
       const partes = [];
       f.apostas.forEach((a) =>
-        a.participacoes.forEach((p) => partes.push({ aposta: a, p, peso: p.cotaC }))
+        a.participacoes.forEach((p) => {
+          if (p.pesoPremioC > 0) partes.push({ aposta: a, p, peso: p.pesoPremioC });
+        })
       );
 
       let valores;
@@ -389,9 +411,10 @@
       // + o clube (ou outro apostador) paga a ela · − ela paga
       p.saldoC = p.premioC - p.apostadoC + p.pagoC;
       p.lucroC = p.premioC - p.apostadoC; // resultado da aposta em si
-      // sócio de um lance que foi para quem bancou: não entra nas contas do
-      // clube, acerta direto com quem pagou
-      p.foraDoCaixa = p.apostas.length > 0 && p.apostadoC === 0 && p.pagoC === 0;
+      // sócio que ficou de fora das contas do clube (o prêmio do lance foi
+      // para outro): não deve nem recebe nada aqui, acerta direto com o sócio
+      p.foraDoCaixa =
+        p.apostas.length > 0 && p.apostadoC === 0 && p.pagoC === 0 && p.premioC === 0;
       return p;
     });
     apostadores.sort(
@@ -410,6 +433,9 @@
       nSocios: apostas.filter((a) => a.temSocios).length,
       aPagarC: abertos.reduce((s, p) => s + Math.max(0, p.saldoC), 0),
       aReceberC: abertos.reduce((s, p) => s + Math.max(0, -p.saldoC), 0),
+      // sem abate, cada ponta é um movimento próprio
+      brutoPagarC: abertos.reduce((s, p) => s + p.premioC + p.adiantadoC, 0),
+      brutoReceberC: abertos.reduce((s, p) => s + p.devendoC, 0),
       nApostas: apostas.length,
       nApostadores: apostadores.length,
       nAtiradores: new Set(apostas.map((a) => chave(a.atirador))).size,
@@ -421,13 +447,16 @@
     const fecha = totais.premiosC + taxaC + sobraClubeC === pote;
     if (!fecha) alertas.push("Erro interno de arredondamento — avise o desenvolvedor.");
 
-    // quem paga quem, no menor número de transferências
+    // quem paga quem: no menor número de transferências, ou tudo em separado
     const saldosAcerto = saldosEmAberto({ apostadores }, NOME_CAIXA);
-    const acerto = pagamentos(saldosAcerto);
+    const acerto = regra.abate
+      ? pagamentos(saldosAcerto)
+      : acertoBruto(apostadores, NOME_CAIXA);
 
     return {
       saldosAcerto,
       acerto,
+      abate: regra.abate,
       regra,
       pote,
       taxaC,
@@ -529,6 +558,30 @@
    * clube: ele guarda o dinheiro das apostas pagas, então participa do
    * rateio como qualquer um.
    */
+  /**
+   * Acerto sem abate: em vez de um saldo líquido por pessoa, cada movimento
+   * aparece por inteiro — quem deve o lance paga o lance, e recebe o prêmio
+   * à parte. Dá mais transferências, mas o caixa registra as duas pontas.
+   */
+  function acertoBruto(apostadores, nomeCaixa) {
+    const caixa = nomeCaixa || NOME_CAIXA;
+    const lista = [];
+    (apostadores || [])
+      .filter((p) => !p.acertado)
+      .forEach((p) => {
+        if (p.devendoC > 0) lista.push({ de: p.nome, para: caixa, valorC: p.devendoC });
+        if (p.adiantadoC > 0) lista.push({ de: caixa, para: p.nome, valorC: p.adiantadoC });
+        if (p.premioC > 0) lista.push({ de: caixa, para: p.nome, valorC: p.premioC });
+      });
+    lista.sort((a, b) => b.valorC - a.valorC || a.de.localeCompare(b.de, "pt-BR"));
+    return {
+      pagamentos: lista,
+      participantes: new Set(lista.flatMap((t) => [t.de, t.para])).size,
+      fecha: true,
+      bruto: true,
+    };
+  }
+
   function saldosEmAberto(conta, nomeCaixa) {
     const abertos = conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0);
     const soma = abertos.reduce((s, p) => s + p.saldoC, 0);
@@ -701,6 +754,7 @@
     MAX_COLOCACOES,
     NOME_CAIXA,
     REGRA_PADRAO,
+    acertoBruto,
     rotuloPosicao,
     pagamentos,
     saldosEmAberto,
