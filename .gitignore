@@ -147,6 +147,8 @@ the-shooting-pool-*.json
 apostas-*.csv
 *.xlsx
 *.xls
+# …menos o modelo entregue ao clube, que é parte do projeto
+!modelo-planilha-apostas.xlsx
 ~$*
 
 # sistema operacional / editores

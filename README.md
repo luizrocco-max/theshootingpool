@@ -79,6 +79,86 @@ são configuráveis **por competição** — e podem virar o padrão das próxim
 
 ---
 
+## Lance rachado entre sócios
+
+Um lance pode ser de duas ou mais pessoas, com **um deles bancando o valor
+inteiro**. Cada sócio tem duas coisas separadas:
+
+- a **cota** — quanto daquele lance é dele (a parte que ele deve);
+- o **pagou** — quanto ele pôs do próprio bolso.
+
+Quem bancou a parte do outro recebe a diferença de volta no acerto.
+
+> **O caso típico.** Luiz e João racham meio a meio um lance de **R$ 500** no
+> atirador A, mas quem entregou os R$ 500 foi o Luiz. O atirador A vence e a
+> faixa paga **R$ 1.000**.
+
+Daí saem dois jeitos de acertar, escolhidos em **👥** no próprio lance (ou nos
+ajustes, valendo para a competição toda):
+
+| Modo | O que acontece |
+| --- | --- |
+| **Dividir entre os sócios** (padrão) | Luiz recebe **R$ 750** (R$ 500 do prêmio + os R$ 250 que adiantou) e João recebe **R$ 250** (R$ 500 do prêmio − os R$ 250 da cota dele). Cada um já sai quite. |
+| **Tudo para quem bancou** | Luiz recebe os **R$ 1.000** sozinho e acerta com o João por fora. O João aparece no acerto como *acerta com o sócio*, sem entrar nas contas do clube. |
+| **Tudo para um sócio escolhido** | O mesmo, mas nomeando quem recebe. Escolhendo o João, ele leva os **R$ 1.000** e o **Luiz sai quite** — o lance que ele bancou passa a ser dele nas contas, para ele não ficar no prejuízo por ter pago sem receber. |
+
+O botão 👥 fica em cada linha da tabela de lances. Ao abrir, ele já traz quem
+lançou na primeira linha; é só acrescentar o sócio, ajustar a cota (tudo `1` =
+partes iguais) e escrever quanto cada um pôs. O resumo embaixo mostra ao vivo a
+cota de cada um em reais e quem adiantou ou ainda deve.
+
+Na planilha, isso vive na aba **`Socios`**: `COMPETICAO · ATIRADOR · SOCIO ·
+COTA · PAGOU · QUEM LEVA`, uma linha por pessoa, ligada ao lance pelo atirador.
+
+---
+
+## Abater o lance do prêmio, ou não
+
+Quem ganhou e ainda não pagou o lance pode acertar de dois jeitos. A escolha
+fica nos Ajustes, ou num atalho na própria aba 🤝 Acerto de contas.
+
+> Luiz devia **R$ 500** do lance e ganhou **R$ 1.000**.
+
+| Modo | O que acontece |
+| --- | --- |
+| **Abater** (padrão) | Um acerto só: o clube paga **R$ 500** a ele e está quite. |
+| **Cobrar e pagar em separado** | Dois movimentos: o Luiz paga os **R$ 500** do lance e recebe os **R$ 1.000** do prêmio. Dá mais transferências, mas o caixa registra as duas pontas. |
+
+O saldo líquido é o mesmo nos dois casos — muda só como o dinheiro anda. Sem
+abate, quem adiantou pelo sócio também recebe esse adiantamento à parte.
+
+---
+
+## Quem paga quem
+
+Acertar as contas passando tudo pelo caixa dá uma transferência por pessoa, em
+cada competição. O painel calcula a lista **mínima** de pagamentos: quem deve
+paga direto quem tem a receber.
+
+> Elza não pagou os R$ 400 da aposta e perdeu; Carla tem R$ 130 a receber.
+> Em vez de a Elza pagar o clube e o clube pagar a Carla, **a Elza paga a Carla**.
+
+O **caixa do clube** entra na lista quando o organizador está com dinheiro de
+apostas já pagas — esse dinheiro também precisa sair.
+
+Aparece em dois lugares:
+
+- **🤝 Acerto de contas** — os pagamentos daquela competição;
+- **📊 Temporada → Acerto geral** — junta **todas as competições em aberto**.
+  Quem ficou devendo numa etapa e ganhou em outra entra com a diferença, e sai
+  um pagamento só (ou nenhum) no lugar de vários. O botão **📄 Baixar PDF do
+  acerto** gera a folha com a lista, um quadradinho para ir marcando o que já
+  foi pago, a posição de cada um com a origem de cada saldo, e o resumo da
+  temporada.
+
+O método é: primeiro os pares que se anulam exatamente, depois os trios que
+fecham em zero, e o resto no guloso — o maior devedor paga o maior credor. Num
+teste com 300 conjuntos aleatórios de saldos, isso bateu o **mínimo exato**
+(calculado por força bruta) em **225 dos 227 casos válidos**; nos outros dois
+saiu um pagamento a mais. Nunca passa de *pessoas − 1* pagamentos.
+
+---
+
 ## PDF dos ganhadores
 
 O botão **📄 Baixar PDF** — nas abas 🏆 Resultado e 🤝 Acerto de contas — gera o
@@ -90,7 +170,8 @@ relatório da competição em A4:
 - **Ganhadores**: cada colocação com o atirador, a faixa e quanto cada apostador leva;
 - **Acerto de contas**: apostou, deve, prêmio, saldo e situação de cada um, com
   quem o clube precisa cobrar em destaque;
-- **Apostas lançadas** para conferência, marcando as que estão em aberto.
+- **Apostas lançadas** para conferência, marcando as que estão em aberto;
+- **Pagamentos** — a lista de quem paga quem, com quadradinho para ir marcando.
 
 O arquivo é gerado no próprio navegador, sem enviar nada para lugar nenhum, e
 quebra em várias páginas repetindo o cabeçalho das tabelas quando a lista é longa.
@@ -196,6 +277,33 @@ offline**. É por isso que o app exige no mínimo 8 caracteres e avisa quando a
 senha é fraca. Use uma **frase**: `pratoquebrado no domingo` é fácil de lembrar,
 fácil de passar no grupo e inviável de adivinhar. Evite `clube123` e parentes.
 
+### A senha nunca fica no código
+
+O repositório é **público**. Se a senha estivesse escrita em algum arquivo,
+qualquer pessoa a leria no GitHub e — pior — usaria para **abrir o
+`data/apostas.json` publicado**, que é cifrado justamente com ela. Não some só
+a tela de login: some a criptografia inteira.
+
+Por isso a senha só existe em dois lugares: na cabeça de quem sabe, e derivada
+dentro do navegador na hora de abrir o arquivo. Há um teste que falha se um
+`data/apostas.json` em texto puro for commitado por engano.
+
+### Deixar a senha valendo desde o primeiro acesso
+
+Enquanto nada foi publicado, quem abre o site cai na tela de **criar senha** —
+e cada pessoa acaba com uma senha própria no aparelho dela, sem a trava
+conferir nada. Para evitar isso, semeie o cofre com um arquivo vazio já
+cifrado:
+
+```bash
+npm run cofre          # pergunta a senha sem exibir na tela
+```
+
+A partir daí todo mundo cai na tela de **entrar**, e só a senha do clube abre.
+O comando também serve para **trocar a senha** sem depender do publicador: rode
+de novo com a senha nova e suba o arquivo. (Passando a senha como argumento
+ela fica no histórico do terminal — prefira digitar quando for pedido.)
+
 ### Detalhes práticos
 
 - **Não há recuperação de senha.** Perdeu, perdeu — restaure de um backup.
@@ -284,8 +392,10 @@ test/calc.test.js              # testes do cálculo
 test/cofre.test.js             # testes da senha e da cifragem
 test/planilha.test.js          # testes da planilha, incluindo um .xlsx de verdade
 test/pdf.test.js               # testes do PDF (estrutura, xref, acentuação)
+test/pagamentos.test.js        # testes do quem paga quem, contra a força bruta
 scripts/serve.js               # servidor local sem dependências (npm start)
 scripts/gerar-modelo.js        # regera o modelo (npm run modelo)
+scripts/semear-cofre.js        # semeia o cofre com a senha do clube (npm run cofre)
 cloudflare-worker.js           # publicador com senha (opcional)
 .nojekyll                      # serve o site sem processamento Jekyll
 ```

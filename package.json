@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node scripts/serve.js",
     "test": "node --test",
-    "modelo": "node scripts/gerar-modelo.js"
+    "modelo": "node scripts/gerar-modelo.js",
+    "cofre": "node scripts/semear-cofre.js"
   },
   "engines": {
     "node": ">=18"

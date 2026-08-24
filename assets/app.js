@@ -80,6 +80,9 @@
           valor: Number(a.valor) || 0,
           pago: !!a.pago,
           pagoAuto: !!a.pagoAuto,
+          socios: Array.isArray(a.socios) && a.socios.length ? a.socios : undefined,
+          premio: a.premio === "cotas" || a.premio === "pagador" ? a.premio : undefined,
+          recebedor: a.recebedor ? C.norm(a.recebedor) : undefined,
           em: a.em || null,
         })),
       });
@@ -277,17 +280,33 @@
         <tbody>${linhas
           .map((a) => {
             const venceu = a.premioC > 0;
+            const dono = a.temSocios
+              ? a.participacoes.map((p) => p.nome).join(" + ")
+              : a.apostador;
+            const pagamento = a.temSocios
+              ? `<button class="tag ${a.pago ? "ok" : a.parcial ? "mut" : "no"}" data-act="socios"
+                    data-id="${esc(a.id)}" title="Ver os sócios">${
+                  a.pago ? "✓ pago" : a.parcial ? "◐ " + esc(fmt(a.pagoC)) + " de " + esc(fmt(a.valorC)) : "✗ não pagou"
+                }</button>`
+              : `<button class="tag ${a.pago ? "ok" : "no"}" data-act="pago" data-id="${esc(a.id)}">${
+                  a.pago ? "✓ pago" : "✗ não pagou"
+                }</button>`;
             return `<tr class="${venceu ? "win" : ""}">
               <td>${esc(a.atirador)}${posicaoTag(conta, a.atirador)}</td>
-              <td>${esc(a.apostador)}</td>
+              <td>${esc(dono)}${
+                a.temSocios
+                  ? ` <span class="tag mut" title="${a.participacoes.length} sócios">👥</span>`
+                  : ""
+              }</td>
               <td class="num">${esc(fmt(a.valorC))}</td>
-              <td><button class="tag ${a.pago ? "ok" : "no"}" data-act="pago" data-id="${esc(a.id)}">${
-                a.pago ? "✓ pago" : "✗ não pagou"
-              }</button></td>
+              <td>${pagamento}</td>
               ${temPremio ? `<td class="num">${a.premioC ? money(a.premioC) : '<span class="tag mut">—</span>'}</td>` : ""}
-              <td class="naoimprime"><button class="btn ghost mini" data-act="excluir" data-id="${esc(
-                a.id
-              )}" title="Excluir aposta">✕</button></td>
+              <td class="naoimprime" style="white-space:nowrap">
+                <button class="btn ghost mini" data-act="socios" data-id="${esc(a.id)}"
+                        title="Sócios do lance">👥</button>
+                <button class="btn ghost mini" data-act="excluir" data-id="${esc(a.id)}"
+                        title="Excluir lance">✕</button>
+              </td>
             </tr>`;
           })
           .join("")}</tbody>
@@ -448,21 +467,37 @@
       return;
     }
     const t = conta.totais;
+    const paga = conta.abate ? t.aPagarC : t.brutoPagarC;
+    const recebe = conta.abate ? t.aReceberC : t.brutoReceberC;
     kpis("kpisAcerto", [
-      { v: esc(fmt(t.aPagarC)), l: "O clube paga", cls: "g" },
-      { v: esc(fmt(t.aReceberC)), l: "O clube recebe", cls: "b" },
-      { v: esc(fmt(t.aReceberC - t.aPagarC)), l: "Efeito no caixa", cls: "a" },
+      { v: esc(fmt(paga)), l: "O clube paga", cls: "g" },
+      { v: esc(fmt(recebe)), l: "O clube recebe", cls: "b" },
+      { v: esc(fmt(recebe - paga)), l: "Efeito no caixa", cls: "a" },
       { v: String(conta.apostadores.filter((p) => !p.acertado).length), l: "Acertos em aberto" },
     ]);
 
     if (!conta.apostadores.length) {
       $("tabelaAcerto").innerHTML = `<div class="vazio">Nenhuma aposta lançada ainda.</div>`;
       $("caixaClube").innerHTML = "";
+      $("pagamentosComp").innerHTML = "";
       return;
     }
+    $("pagamentosComp").innerHTML = cardPagamentos(
+      conta.acerto,
+      conta.abate ? "Quem paga quem" : "Movimentos do caixa",
+      {
+        botoes:
+          `<button class="btn ghost mini naoimprime" data-act="abate">${
+            conta.abate ? "↔️ Cobrar e pagar em separado" : "🧮 Abater o lance do prêmio"
+          }</button>`,
+        bruto: !conta.abate,
+      }
+    );
 
     const linha = (p) => {
-      const situacao = p.acertado
+      const situacao = p.foraDoCaixa
+        ? `<span class="tag mut" title="o prêmio foi para quem bancou o lance">acerta com o sócio</span>`
+        : p.acertado
         ? `<span class="tag mut">acertado${p.acertadoEm ? " · " + esc(dataBR(p.acertadoEm)) : ""}</span>`
         : p.saldoC > 0
         ? `<span class="tag ok">clube paga</span>`
@@ -472,7 +507,13 @@
       return `<tr class="${p.acertado ? "quit" : ""}">
         <td>${esc(p.nome)}</td>
         <td class="num">${esc(fmt(p.apostadoC))}</td>
-        <td class="num">${p.devendoC ? esc(fmt(p.devendoC)) : "—"}</td>
+        <td class="num">${
+          p.devendoC
+            ? esc(fmt(p.devendoC))
+            : p.adiantadoC
+            ? `<span class="money pos" title="bancou a parte de um sócio">−${esc(fmt(p.adiantadoC))}</span>`
+            : "—"
+        }</td>
         <td class="num">${p.premioC ? esc(fmt(p.premioC)) : "—"}</td>
         <td class="num">${money(p.saldoC)}</td>
         <td>${situacao}</td>
@@ -501,6 +542,11 @@
           <tbody>
             <tr><td>Entrou (apostas já pagas)</td><td class="num">${esc(fmt(t.pagoC))}</td></tr>
             <tr><td>Ainda a receber</td><td class="num">${esc(fmt(t.devendoC))}</td></tr>
+            ${
+              t.adiantadoC
+                ? `<tr><td>Adiantado por sócios (volta para eles)</td><td class="num">${esc(fmt(t.adiantadoC))}</td></tr>`
+                : ""
+            }
             <tr><td>Sai em prêmios</td><td class="num">${esc(fmt(t.premiosC))}</td></tr>
             ${conta.taxaC ? `<tr><td>Taxa do clube (${C.regraDe(c).taxaClube}%)</td><td class="num">${esc(fmt(conta.taxaC))}</td></tr>` : ""}
             ${conta.sobraClubeC && conta.definido ? `<tr><td>Fatia sem apostador retida</td><td class="num">${esc(fmt(conta.sobraClubeC))}</td></tr>` : ""}
@@ -513,6 +559,51 @@
             : "⚠️ Diferença de " + esc(fmt(conf)) + " — avise o desenvolvedor."
         }</div>
       </div>`;
+  }
+
+  /**
+   * A lista de "quem paga quem": o menor número de transferências que quita
+   * todo mundo. Usada na competição e no acerto geral da temporada.
+   */
+  function cardPagamentos(acerto, titulo, extras) {
+    const lista = (acerto && acerto.pagamentos) || [];
+    const o = extras || {};
+    if (!lista.length)
+      return `<div class="card">
+        <h3>${esc(titulo)}</h3>
+        <div class="vazio">Ninguém tem nada a pagar nem a receber. Tudo quite.</div>
+      </div>`;
+
+    const total = lista.reduce((s, p) => s + p.valorC, 0);
+    return `<div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0">${esc(titulo)} — ${lista.length} pagamento${lista.length > 1 ? "s" : ""}</h3>
+        <span class="sp"></span>
+        ${o.botoes || ""}
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Quem paga</th><th></th><th>Para quem</th><th class="num">Valor</th></tr></thead>
+        <tbody>${lista
+          .map(
+            (p) => `<tr class="win">
+              <td>${esc(p.de)}</td>
+              <td style="color:var(--muted)">→</td>
+              <td>${esc(p.para)}</td>
+              <td class="num">${money(p.valorC)}</td>
+            </tr>`
+          )
+          .join("")}</tbody>
+      </table></div>
+      <div class="note">
+        Total de ${esc(fmt(total))} em ${lista.length} pagamento${lista.length > 1 ? "s" : ""}${
+      o.avulsos && o.avulsos > lista.length ? `, no lugar de ${o.avulsos} acertos avulsos` : ""
+    }. ${
+      o.bruto
+        ? "Cada ponta é um movimento próprio: quem devia o lance paga o lance, e recebe o prêmio à parte."
+        : "Quem deve paga direto quem tem a receber"
+    }; o <b>caixa do clube</b> é o dinheiro das apostas já pagas, que está com o organizador.
+      </div>
+    </div>`;
   }
 
   function resumoTexto() {
@@ -561,8 +652,19 @@
       $("rankApostadores").innerHTML = `<div class="card"><div class="vazio">Sem apostas registradas ainda.</div></div>`;
       $("rankAtiradores").innerHTML = "";
       $("listaComps").innerHTML = "";
+      $("acertoGeral").innerHTML = "";
       return;
     }
+
+    // acerto geral: junta todas as competições em aberto num pagamento só por pessoa
+    const avulsos = t.comps.reduce(
+      (s, c) => s + c.conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0).length,
+      0
+    );
+    $("acertoGeral").innerHTML = cardPagamentos(t.acerto, "Acerto geral do clube", {
+      avulsos,
+      botoes: `<button class="btn mini naoimprime" data-act="pdfgeral">📄 Baixar PDF do acerto</button>`,
+    });
 
     $("rankApostadores").innerHTML = `
       <div class="card">
@@ -698,6 +800,29 @@
         </div>
         <div><label class="lb">Taxa do clube (%)</label><input id="rTaxa" inputmode="decimal" value="${r.taxaClube}"></div>
       </div>
+      <div class="formgrid" style="grid-template-columns:1fr;margin-top:12px">
+        <div>
+          <label class="lb">Lance com sócios — quem leva o prêmio</label>
+          <select id="rSocios">
+            <option value="cotas"${r.socios === "cotas" ? " selected" : ""}>Dividir entre os sócios, pela cota de cada um</option>
+            <option value="pagador"${r.socios === "pagador" ? " selected" : ""}>Tudo para quem bancou o lance</option>
+          </select>
+          <div class="hint">Vale para os lances que não tiverem escolha própria. No 👥 de cada
+            lance dá para mudar só naquele, inclusive escolhendo qual sócio recebe.</div>
+        </div>
+      </div>
+      <div class="formgrid" style="grid-template-columns:1fr;margin-top:12px">
+        <div>
+          <label class="lb">Quem ganhou e não pagou o lance</label>
+          <select id="rAbate">
+            <option value="sim"${r.abate ? " selected" : ""}>Abater o lance do prêmio (um acerto só)</option>
+            <option value="nao"${!r.abate ? " selected" : ""}>Cobrar o lance e pagar o prêmio em separado</option>
+          </select>
+          <div class="hint">Abatendo, quem devia R$ 500 e ganhou R$ 1.000 recebe R$ 500 e pronto.
+            Em separado, ele paga os R$ 500 e recebe os R$ 1.000 — dois movimentos, para o caixa
+            registrar as duas pontas.</div>
+        </div>
+      </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
         <button class="btn" id="btnSalvarRegra">Salvar ajustes</button>
         <button class="btn ghost" id="btnRegraPadrao">Usar também nas próximas</button>
@@ -718,6 +843,8 @@
     const regra = Object.assign(C.regraDe(c), {
       rateio: $("rRateio").value,
       sobra: $("rSobra").value,
+      socios: $("rSocios").value,
+      abate: $("rAbate").value !== "nao",
       taxaClube: num("rTaxa"),
     });
     const soma = regra.premios.reduce((a, b) => a + b, 0);
@@ -829,6 +956,178 @@
     baixarArquivo(`apostas-${(c.nome || "competicao").replace(/\W+/g, "-").toLowerCase()}.csv`, "﻿" + csv, "text/csv;charset=utf-8");
   }
 
+  /* ══════════════════════════ SÓCIOS DO LANCE ═══════════════════════ */
+
+  let socioEditando = null; // id do lance aberto no modal
+
+  /** Uma linha do editor: nome, cota e quanto a pessoa pôs do bolso. */
+  function linhaSocio(s) {
+    return `<div class="socio">
+      <input class="s-nome" list="dlApostadores" placeholder="Nome" value="${esc(s.nome || "")}">
+      <input class="s-cota cota" inputmode="decimal" placeholder="1" value="${esc(
+        s.cota === undefined || s.cota === null ? "" : String(s.cota).replace(".", ",")
+      )}">
+      <input class="s-pagou pagou" inputmode="decimal" placeholder="0,00" value="${esc(
+        s.pagouTexto === undefined ? "" : s.pagouTexto
+      )}">
+      <button type="button" class="tirar" data-act="tirarSocio" title="Tirar este sócio">✕</button>
+    </div>`;
+  }
+
+  function abrirSocios(idAposta) {
+    const c = compAtual();
+    if (!c) return;
+    const a = c.apostas.find((x) => x.id === idAposta);
+    if (!a) return;
+    socioEditando = idAposta;
+
+    const valorC = C.cent(a.valor);
+    const existentes = Array.isArray(a.socios) && a.socios.length ? a.socios : null;
+    const linhas = existentes
+      ? existentes.map((s) => ({
+          nome: s.nome,
+          cota: s.cota === undefined ? 1 : s.cota,
+          pagouTexto: s.pagou === true ? C.reais(0) : s.pagou ? String(C.reais(C.cent(s.pagou))).replace(".", ",") : "",
+        }))
+      : [
+          // primeira vez: quem lançou entra com tudo, do jeito que já estava
+          { nome: a.apostador, cota: 1, pagouTexto: a.pago ? String(C.reais(valorC)).replace(".", ",") : "" },
+          { nome: "", cota: 1, pagouTexto: "" },
+        ];
+
+    $("socioContexto").innerHTML =
+      `Lance de <b>${esc(fmt(valorC))}</b> no atirador <b>${esc(a.atirador)}</b>. ` +
+      `A <b>cota</b> diz como o lance é rachado (deixe tudo igual para meio a meio). ` +
+      `Em <b>pagou</b>, quanto cada um pôs do próprio bolso — quem bancou a parte do outro ` +
+      `recebe a diferença de volta no acerto.`;
+    $("listaSocios").innerHTML =
+      `<div class="sociocab"><span>Sócio</span><span>Cota</span><span>Pagou R$</span><span></span></div>` +
+      linhas.map(linhaSocio).join("");
+    msg("msgSocios", "", "");
+    atualizarResumoSocios(a.recebedor ? "recebe:" + C.chave(a.recebedor) : a.premio || "");
+    $("modalSocios").hidden = false;
+  }
+
+  /** Lê o que está digitado no modal. */
+  function lerSocios() {
+    return [...document.querySelectorAll("#listaSocios .socio")].map((el) => ({
+      nome: C.norm(el.querySelector(".s-nome").value),
+      cota: parseFloat(String(el.querySelector(".s-cota").value).replace(",", ".")),
+      pagouC: C.parseValor(el.querySelector(".s-pagou").value),
+    }));
+  }
+
+  /** Mostra ao vivo quanto é a cota de cada um, em reais. */
+  function atualizarResumoSocios(escolhaInicial) {
+    const c = compAtual();
+    const a = c && c.apostas.find((x) => x.id === socioEditando);
+    if (!a) return;
+    const valorC = C.cent(a.valor);
+    const linhas = lerSocios().filter((s) => s.nome);
+
+    // as opções de "quem leva" incluem cada sócio pelo nome
+    const sel = $("socioModo");
+    const escolha = escolhaInicial !== undefined ? escolhaInicial : sel.value;
+    sel.innerHTML =
+      `<option value="">Como está nos ajustes da competição</option>` +
+      `<option value="cotas">Dividir entre os sócios, pela cota de cada um</option>` +
+      `<option value="pagador">Tudo para quem bancou o lance</option>` +
+      linhas
+        .map((s) => `<option value="recebe:${esc(C.chave(s.nome))}">Tudo para ${esc(s.nome)}</option>`)
+        .join("");
+    sel.value = [...sel.options].some((o) => o.value === escolha) ? escolha : "";
+
+    if (!linhas.length) { $("socioResumo").innerHTML = ""; return; }
+
+    const pesos = linhas.map((s) => (Number.isFinite(s.cota) && s.cota > 0 ? s.cota : 0));
+    const cotas = C.distribuir(valorC, pesos.some((p) => p > 0) ? pesos : linhas.map(() => 1));
+    const pago = linhas.reduce((s, x) => s + x.pagouC, 0);
+
+    $("socioResumo").innerHTML =
+      linhas
+        .map((s, i) => {
+          const dif = s.pagouC - cotas[i];
+          const nota =
+            dif > 0 ? ` · adiantou ${esc(fmt(dif))}` : dif < 0 ? ` · deve ${esc(fmt(-dif))}` : " · quite";
+          return `<b>${esc(s.nome)}</b>: cota ${esc(fmt(cotas[i]))}${esc(nota)}`;
+        })
+        .join("<br>") +
+      (pago !== valorC
+        ? `<br><span style="color:var(--accent2)">O lance é de ${esc(fmt(valorC))} e foi pago ${esc(
+            fmt(pago)
+          )}. O que faltar continua em aberto com o clube.</span>`
+        : `<br><span style="color:var(--good)">Lance quitado.</span>`);
+
+    const modo = sel.value || C.regraDe(c).socios;
+    const escolhido = modo.startsWith("recebe:")
+      ? (linhas.find((s) => C.chave(s.nome) === modo.slice(7)) || {}).nome
+      : null;
+    $("socioModoNota").textContent = escolhido
+      ? `O prêmio inteiro vai para ${escolhido}; quem bancou o lance sai quite e os sócios acertam entre eles.`
+      : modo === "pagador"
+      ? "O prêmio inteiro vai para quem bancou o lance; os sócios acertam entre eles por fora."
+      : "Cada sócio recebe a parte dele do prêmio, já descontado o que devia da cota.";
+  }
+
+  function salvarSocios() {
+    const c = compAtual();
+    const a = c && c.apostas.find((x) => x.id === socioEditando);
+    if (!a) return;
+    const linhas = lerSocios().filter((s) => s.nome);
+
+    if (linhas.length < 2) {
+      msg("msgSocios", "Um lance com sócios precisa de pelo menos duas pessoas.", "err");
+      return;
+    }
+    const valorC = C.cent(a.valor);
+    const pago = linhas.reduce((s, x) => s + x.pagouC, 0);
+    if (pago > valorC) {
+      msg(
+        "msgSocios",
+        `A soma do que foi pago (${esc(fmt(pago))}) passa do valor do lance (${esc(fmt(valorC))}).`,
+        "err"
+      );
+      return;
+    }
+
+    a.socios = linhas.map((s) => ({
+      nome: s.nome,
+      cota: Number.isFinite(s.cota) && s.cota > 0 ? s.cota : 1,
+      pagou: C.reais(s.pagouC),
+    }));
+    a.apostador = linhas[0].nome; // o primeiro é quem aparece como dono do lance
+
+    const escolha = $("socioModo").value;
+    if (escolha.startsWith("recebe:")) {
+      const alvo = linhas.find((s) => C.chave(s.nome) === escolha.slice(7));
+      a.recebedor = alvo ? alvo.nome : null;
+      a.premio = null;
+    } else {
+      a.recebedor = null;
+      a.premio = escolha || null;
+    }
+    a.pago = pago >= valorC;
+    a.pagoAuto = false;
+    $("modalSocios").hidden = true;
+    socioEditando = null;
+    salvar();
+  }
+
+  function tirarSocios() {
+    const c = compAtual();
+    const a = c && c.apostas.find((x) => x.id === socioEditando);
+    if (!a) return;
+    if (!confirm("Tirar os sócios e deixar o lance no nome de uma pessoa só?")) return;
+    const primeiro = (a.socios && a.socios[0] && a.socios[0].nome) || a.apostador;
+    delete a.socios;
+    a.premio = null;
+    a.recebedor = null;
+    a.apostador = primeiro;
+    $("modalSocios").hidden = true;
+    socioEditando = null;
+    salvar();
+  }
+
   /* ═══════════════════════════════ PDF ══════════════════════════════ */
 
   /** Nome de arquivo sem acento nem sinal esquisito. */
@@ -850,6 +1149,19 @@
       baixarArquivo(
         `apostas-${slug(c.nome)}${c.data ? "-" + c.data : ""}.pdf`,
         bytes,
+        "application/pdf"
+      );
+    } catch (err) {
+      alert("Não consegui gerar o PDF: " + err.message);
+    }
+  }
+
+  /** Acerto geral: todas as competições em aberto num roteiro de pagamento. */
+  function gerarPDFGeral() {
+    try {
+      baixarArquivo(
+        `acerto-geral-${hoje()}.pdf`,
+        Pdf.relatorioGeral(DADOS, { geradoEm: agora() }),
         "application/pdf"
       );
     } catch (err) {
@@ -1111,6 +1423,19 @@
     };
     $("btnCSV").onclick = exportarCSV;
 
+    // sócios do lance
+    $("btnAddSocio").onclick = () => {
+      $("listaSocios").insertAdjacentHTML("beforeend", linhaSocio({ cota: 1 }));
+      atualizarResumoSocios();
+      const campos = document.querySelectorAll("#listaSocios .s-nome");
+      if (campos.length) campos[campos.length - 1].focus();
+    };
+    $("btnSalvarSocios").onclick = salvarSocios;
+    $("btnTirarSocios").onclick = tirarSocios;
+    // sem passar o evento adiante: o argumento é a escolha, não o Event
+    $("listaSocios").addEventListener("input", () => atualizarResumoSocios());
+    $("socioModo").addEventListener("change", () => atualizarResumoSocios());
+
     // planilha
     $("btnModelo").onclick = baixarModelo;
     $("btnExportar").onclick = exportarExcel;
@@ -1241,6 +1566,18 @@
         }
       } else if (act === "pdf") {
         gerarPDF();
+      } else if (act === "pdfgeral") {
+        gerarPDFGeral();
+      } else if (act === "abate") {
+        if (!c) return;
+        c.regra = Object.assign(C.regraDe(c), { abate: !C.regraDe(c).abate });
+        salvar();
+      } else if (act === "socios") {
+        abrirSocios(btn.dataset.id);
+      } else if (act === "tirarSocio") {
+        const linha = btn.closest(".socio");
+        if (linha) linha.remove();
+        atualizarResumoSocios();
       } else if (act === "acertar") {
         acertar(btn.dataset.chave);
       } else if (act === "desacertar") {

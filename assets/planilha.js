@@ -35,6 +35,9 @@
     pago: ["PAGO", "PAGOU", "PAGAMENTO", "QUITADO", "JA PAGOU"],
     colocacao: ["COLOCACAO", "POSICAO", "LUGAR", "CLASSIFICACAO"],
     percentual: ["PERCENTUAL", "PERCENTAGEM", "PORCENTAGEM", "PCT", "PREMIO"],
+    socio: ["SOCIO", "SOCIOS", "PARCEIRO", "NOME DO SOCIO"],
+    cota: ["COTA", "COTAS", "PARTE", "FRACAO"],
+    modo: ["QUEM LEVA", "QUEM LEVA O PREMIO", "MODO"],
     rateio: ["RATEIO", "DIVISAO", "DIVISAO DA FAIXA"],
     sobra: ["SOBRA", "FAIXA SEM APOSTADOR", "SEM APOSTADOR"],
     taxa: ["TAXA", "TAXA DO CLUBE", "COMISSAO"],
@@ -211,6 +214,58 @@
       }
     }
 
+    /* ── sócios dos lances ───────────────────────────────────────────── */
+    // uma linha por sócio, ligada ao lance pelo par competição + atirador
+    const aoaSoc = pegarAba(abas, "Socios");
+    const cabSoc = acharCabecalho(aoaSoc, ["atirador", "socio"]);
+    if (cabSoc) {
+      const cs = cabSoc.colunas;
+      let compSoc = "";
+      let atiradorSoc = "";
+      const porLance = new Map();
+      for (let i = cabSoc.linha + 1; i < aoaSoc.length; i++) {
+        const linha = aoaSoc[i] || [];
+        const cel = (campo) => (cs[campo] === undefined ? "" : linha[cs[campo]]);
+        // competição e atirador escorrem para baixo, como na aba de apostas
+        const nomeComp = texto(cel("competicao"));
+        if (nomeComp) compSoc = nomeComp;
+        const nomeAtirador = texto(cel("atirador"));
+        if (nomeAtirador) atiradorSoc = nomeAtirador;
+        const atirador = atiradorSoc;
+        const nome = texto(cel("socio"));
+        if (!atirador || !nome) continue;
+
+        const k = C.chave(compSoc || ultimaComp) + "|" + C.chave(atirador);
+        if (!porLance.has(k)) porLance.set(k, { socios: [], modo: null });
+        const alvo = porLance.get(k);
+
+        // "pagou" aceita tanto um valor quanto sim/não
+        const bruto = cel("pago");
+        const comoTexto = C.chave(bruto);
+        const pagou =
+          comoTexto && !/[0-9]/.test(comoTexto) ? ehSim(bruto) : C.reais(valorCent(bruto));
+        const cota = parseFloat(String(cel("cota")).replace(",", "."));
+        alvo.socios.push({ nome, cota: Number.isFinite(cota) && cota > 0 ? cota : 1, pagou });
+
+        const modo = C.chave(cel("modo"));
+        if (modo.startsWith("PAGADOR") || modo.startsWith("QUEM PAGOU")) alvo.modo = "pagador";
+        else if (modo.startsWith("COTA")) alvo.modo = "cotas";
+      }
+
+      // liga cada grupo ao lance daquele atirador
+      porNome.forEach((c, k) => {
+        c.apostas.forEach((ap) => {
+          const achado = porLance.get(k + "|" + C.chave(ap.atirador));
+          if (!achado || achado.usado || achado.socios.length < 2) return;
+          achado.usado = true;
+          ap.socios = achado.socios;
+          if (achado.modo) ap.premio = achado.modo;
+          ap.apostador = achado.socios[0].nome;
+          delete ap.pago; // quem manda passa a ser o "pagou" de cada sócio
+        });
+      });
+    }
+
     /* ── ajustes ─────────────────────────────────────────────────────── */
     const aoaAj = pegarAba(abas, "Ajustes");
     const cabAj = acharCabecalho(aoaAj, ["rateio"]) || acharCabecalho(aoaAj, ["taxa"]);
@@ -264,6 +319,7 @@
   /* ══════════════════════════════ EXPORTAR ═══════════════════════════ */
 
   const CAB_APOSTAS = ["COMPETICAO", "DATA", "ATIRADOR", "APOSTADOR", "VALOR", "PAGO"];
+  const CAB_SOCIOS = ["COMPETICAO", "ATIRADOR", "SOCIO", "COTA", "PAGOU", "QUEM LEVA"];
   const CAB_RESULTADO = ["COMPETICAO", "COLOCACAO", "ATIRADOR", "PERCENTUAL"];
   const CAB_AJUSTES = ["COMPETICAO", "RATEIO", "SOBRA", "TAXA"];
 
@@ -282,6 +338,7 @@
     const comps = (dados && dados.competicoes) || [];
 
     const apostas = [CAB_APOSTAS.slice()];
+    const socios = [CAB_SOCIOS.slice()];
     const resultado = [CAB_RESULTADO.slice()];
     const ajustes = [CAB_AJUSTES.slice()];
     const acerto = [
@@ -301,6 +358,19 @@
           emReais(a.valorC),
           a.pago ? "sim" : "não",
         ]);
+        if (!a.temSocios) return;
+        // uma linha por sócio, na aba de sócios
+        const bruta = (comp.apostas || []).find((x) => x.id === a.id) || {};
+        a.participacoes.forEach((p, i) => {
+          socios.push([
+            i === 0 ? comp.nome : "",
+            i === 0 ? a.atirador : "",
+            p.nome,
+            ((bruta.socios || [])[i] || {}).cota || 1,
+            emReais(p.pagoC),
+            i === 0 ? bruta.premio || "" : "",
+          ]);
+        });
       });
 
       regra.premios.forEach((pct, i) => {
@@ -355,6 +425,7 @@
 
     return {
       Apostas: apostas,
+      Socios: socios,
       Resultado: resultado,
       Ajustes: ajustes,
       Acerto: acerto,
@@ -380,6 +451,16 @@
         ["  VALOR       em reais (100 ou 100,50)."],
         ["  PAGO        sim / não  (também vale x, ok, 1)."],
         [],
+        ["A aba SOCIOS é opcional, para lance rachado entre duas ou mais pessoas."],
+        ["  ATIRADOR    liga o grupo ao lance daquele atirador, na aba APOSTAS."],
+        ["  SOCIO       uma linha por pessoa."],
+        ["  COTA        como o lance é rachado. Tudo 1 = partes iguais."],
+        ["  PAGOU       quanto essa pessoa pôs do próprio bolso (pode ser zero)."],
+        ["  QUEM LEVA   cotas (cada sócio recebe a parte dele, já descontando o"],
+        ["              que devia) ou pagador (o prêmio inteiro vai para quem"],
+        ["              bancou o lance, e os sócios acertam por fora)."],
+        ["  A competição e o atirador repetem a linha de cima se ficarem em branco."],
+        [],
         ["Na aba RESULTADO, informe o pódio e quanto vale cada colocação."],
         ["  COLOCACAO   1, 2, 3… quantas o clube premiar."],
         ["  PERCENTUAL  quanto do bolo vai para aquela colocação (50, 30, 20…)."],
@@ -402,6 +483,13 @@
         ["", "", "Rui", "Carla", 200, "sim"],
         ["", "", "Kiko", "Davi", 100, "sim"],
         ["", "", "Tito", "Elza", 400, "não"],
+      ],
+      // o lance da Carla no Rui é rachado com o Luiz, mas ela bancou os 200:
+      // na aba Apostas ele consta como pago, e aqui se vê por quem
+      Socios: [
+        CAB_SOCIOS.slice(),
+        [exemplo, "Rui", "Carla", 1, 200, "cotas"],
+        ["", "", "Luiz", 1, 0, ""],
       ],
       Resultado: [
         CAB_RESULTADO.slice(),
