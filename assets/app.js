@@ -488,7 +488,11 @@
       { v: esc(fmt(paga)), l: "O clube paga", cls: "g" },
       { v: esc(fmt(recebe)), l: "O clube recebe", cls: "b" },
       { v: esc(fmt(recebe - paga)), l: "Efeito no caixa", cls: "a" },
-      { v: String(conta.apostadores.filter((p) => !p.acertado).length), l: "Acertos em aberto" },
+      // quem está quite não é acerto pendente — é o mesmo critério da aba
+      {
+        v: String(conta.apostadores.filter((p) => !p.acertado && p.saldoC !== 0).length),
+        l: "Acertos em aberto",
+      },
     ]);
 
     if (!conta.apostadores.length) {
